@@ -103,7 +103,6 @@ export function ChartToolbar({
   const [activeCategory, setActiveCategory] = useState<DrawingToolCategory | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
-  const [showCustomInterval, setShowCustomInterval] = useState(false);
   const [customValue, setCustomValue] = useState("7");
   const [customUnit, setCustomUnit] = useState<"s" | "m" | "h" | "D" | "W">("m");
   const [showAllToolsModal, setShowAllToolsModal] = useState(false);
@@ -2400,9 +2399,7 @@ export function DrawingQuickToolbar({
   const displayInfo = toolInfo || getToolInfo(displayTool);
 
   // Determine which controls to show based on tool type
-  const isLine = ["trendline", "ray", "extended", "horizontal", "vertical", "horizontal_ray", "arrow", "info_line", "trend_angle", "cross_line"].includes(displayTool);
   const isShape = ["rectangle", "circle", "ellipse", "triangle", "parallel_channel"].includes(displayTool);
-  const isFibonacci = displayTool.startsWith("fib_");
   const hasExtend = ["trendline", "ray", "extended"].includes(displayTool);
 
   return (

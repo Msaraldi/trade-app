@@ -163,9 +163,9 @@ function formatFullTime(timestamp: number): string {
   });
 }
 
-// Get time label interval step in milliseconds based on chart interval
-function getTimeLabelStep(interval: string, visibleDuration: number): number {
-  const numInterval = parseInt(interval);
+// Get time label interval step in milliseconds (reserved for future use)
+function _getTimeLabelStep(_interval: string, visibleDuration: number): number {
+  // Note: _interval reserved for future interval-specific label steps
 
   // Calculate roughly 6-10 labels across the visible area
   const targetLabels = 8;
@@ -197,8 +197,8 @@ function getTimeLabelStep(interval: string, visibleDuration: number): number {
   return bestStep;
 }
 
-// Check if timestamp is on a natural boundary
-function isOnBoundary(timestamp: number, step: number): boolean {
+// Check if timestamp is on a natural boundary (reserved for future use)
+function _isOnBoundary(timestamp: number, step: number): boolean {
   const minute = 60 * 1000;
   const hour = 60 * minute;
   const day = 24 * hour;
@@ -222,8 +222,8 @@ function isOnBoundary(timestamp: number, step: number): boolean {
   return true;
 }
 
-// Format time label based on boundary type (major = date, minor = time)
-function formatTimeLabel(timestamp: number, step: number, prevTimestamp?: number): { label: string; isMajor: boolean } {
+// Format time label based on boundary type (reserved for future use)
+function _formatTimeLabel(timestamp: number, step: number, prevTimestamp?: number): { label: string; isMajor: boolean } {
   const date = new Date(timestamp);
   const prevDate = prevTimestamp ? new Date(prevTimestamp) : null;
 
@@ -1592,7 +1592,7 @@ export function CustomChart({
       const hours = date.getHours().toString().padStart(2, "0");
       const minutes = date.getMinutes().toString().padStart(2, "0");
       const dayStr = date.getDate().toString();
-      const monthStr = (date.getMonth() + 1).toString().padStart(2, "0");
+      const _monthStr = (date.getMonth() + 1).toString().padStart(2, "0"); // Reserved for extended date labels
 
       let label: string;
       let isMajor = false;
