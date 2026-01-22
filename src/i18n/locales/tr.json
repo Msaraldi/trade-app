@@ -1,0 +1,383 @@
+{
+  "app": {
+    "name": "AlgoTrade OS",
+    "version": "Versiyon",
+    "demoMode": "Demo Modu",
+    "liveMode": "Canlı Mod"
+  },
+  "common": {
+    "save": "Kaydet",
+    "cancel": "İptal",
+    "delete": "Sil",
+    "edit": "Düzenle",
+    "add": "Ekle",
+    "close": "Kapat",
+    "confirm": "Onayla",
+    "back": "Geri",
+    "next": "İleri",
+    "loading": "Yükleniyor...",
+    "error": "Hata",
+    "success": "Başarılı",
+    "warning": "Uyarı",
+    "info": "Bilgi",
+    "yes": "Evet",
+    "no": "Hayır",
+    "search": "Ara",
+    "filter": "Filtrele",
+    "reset": "Sıfırla",
+    "apply": "Uygula",
+    "refresh": "Yenile",
+    "export": "Dışa Aktar",
+    "import": "İçe Aktar",
+    "settings": "Ayarlar",
+    "help": "Yardım",
+    "logout": "Çıkış Yap",
+    "login": "Giriş Yap",
+    "active": "Aktif",
+    "inactive": "Pasif",
+    "enabled": "Etkin",
+    "disabled": "Devre Dışı",
+    "on": "Açık",
+    "off": "Kapalı"
+  },
+  "nav": {
+    "dashboard": "Kontrol Paneli",
+    "trading": "İşlem",
+    "positions": "Pozisyonlar",
+    "orders": "Emirler",
+    "history": "Geçmiş",
+    "analytics": "Analitik",
+    "settings": "Ayarlar",
+    "modules": "Modüller",
+    "alerts": "Alarmlar"
+  },
+  "moduleStore": {
+    "title": "Barbar Tools",
+    "subtitle": "İşlem araçlarını ve özellikleri etkinleştirin",
+    "tradingAccess": "İşlem Yetkisi",
+    "analysisOnly": "Sadece Analiz",
+    "activate": "Etkinleştir",
+    "deactivate": "Devre Dışı Bırak",
+    "installed": "Yüklü",
+    "available": "Mevcut",
+    "update": "Güncelle",
+    "configure": "Yapılandır"
+  },
+  "modules": {
+    "stopLoss": {
+      "name": "Akıllı Stop-Loss",
+      "description": "Otomatik breakeven ile akıllı stop-loss yönetimi"
+    },
+    "batchTrading": {
+      "name": "Toplu İşlem",
+      "description": "Toplu işlem ve varlık grubu yönetimi"
+    },
+    "vwapAnalyzer": {
+      "name": "VWAP Analizi",
+      "description": "VWAP, VAL/VAH hesaplama ve görselleştirme"
+    },
+    "riskMonitor": {
+      "name": "Risk İzleyici",
+      "description": "Kümülatif risk takibi ve günlük limit kontrolü"
+    },
+    "smaAnalyzer": {
+      "name": "SMA Analizi",
+      "description": "Basit Hareketli Ortalamalar - Büyük fonların takip ettiği kritik seviyeler"
+    },
+    "anchoredVwap": {
+      "name": "Çapalı VWAP",
+      "description": "Belirli bir noktadan günümüze VWAP hesaplama"
+    },
+    "strategyBuilder": {
+      "name": "Strateji Oluşturucu",
+      "description": "Birden fazla göstergeyi birleştirerek özel işlem sinyalleri oluşturun"
+    }
+  },
+  "riskCalculator": {
+    "title": "Risk Hesaplayıcı",
+    "subtitle": "Riske göre optimum pozisyon boyutunu hesaplayın",
+    "accountBalance": "Hesap Bakiyesi",
+    "riskPercent": "Risk Yüzdesi",
+    "entryPrice": "Giriş Fiyatı",
+    "stopLoss": "Stop Loss",
+    "takeProfit": "Kar Al",
+    "calculate": "Pozisyon Boyutunu Hesapla",
+    "results": {
+      "title": "Sonuçlar",
+      "positionSize": "Pozisyon Boyutu",
+      "units": "adet",
+      "riskAmount": "Risk Miktarı",
+      "potentialLoss": "Potansiyel Kayıp",
+      "potentialProfit": "Potansiyel Kar",
+      "riskRewardRatio": "Risk/Ödül Oranı"
+    }
+  },
+  "globalRisk": {
+    "title": "Global Risk Durumu",
+    "current": "Mevcut",
+    "max": "Maksimum",
+    "available": "Kullanılabilir",
+    "warning": "Risk limitine yaklaşılıyor",
+    "exceeded": "Risk limiti aşıldı"
+  },
+  "positions": {
+    "title": "Açık Pozisyonlar",
+    "noPositions": "Açık pozisyon yok",
+    "symbol": "Sembol",
+    "side": "Yön",
+    "long": "Long",
+    "short": "Short",
+    "entryPrice": "Giriş Fiyatı",
+    "currentPrice": "Anlık Fiyat",
+    "quantity": "Miktar",
+    "pnl": "K/Z",
+    "pnlPercent": "K/Z %",
+    "stopLoss": "Stop Loss",
+    "takeProfit": "Kar Al",
+    "closePosition": "Pozisyonu Kapat",
+    "modifyPosition": "Pozisyonu Düzenle"
+  },
+  "orders": {
+    "title": "Emirler",
+    "openOrders": "Açık Emirler",
+    "orderHistory": "Emir Geçmişi",
+    "noOrders": "Açık emir yok",
+    "symbol": "Sembol",
+    "type": "Tip",
+    "side": "Yön",
+    "buy": "Al",
+    "sell": "Sat",
+    "price": "Fiyat",
+    "quantity": "Miktar",
+    "filled": "Dolum",
+    "status": "Durum",
+    "cancelOrder": "Emri İptal Et",
+    "cancelAll": "Tümünü İptal Et",
+    "orderTypes": {
+      "market": "Piyasa",
+      "limit": "Limit",
+      "stopMarket": "Stop Piyasa",
+      "stopLimit": "Stop Limit"
+    },
+    "orderStatus": {
+      "pending": "Bekliyor",
+      "filled": "Gerçekleşti",
+      "partiallyFilled": "Kısmen Gerçekleşti",
+      "cancelled": "İptal Edildi",
+      "rejected": "Reddedildi"
+    }
+  },
+  "alerts": {
+    "title": "Alarmlar",
+    "createAlert": "Alarm Oluştur",
+    "editAlert": "Alarmı Düzenle",
+    "deleteAlert": "Alarmı Sil",
+    "noAlerts": "Yapılandırılmış alarm yok",
+    "symbol": "Sembol",
+    "condition": "Koşul",
+    "targetPrice": "Hedef Fiyat",
+    "notification": "Bildirim",
+    "conditions": {
+      "priceAbove": "Fiyat Üzerinde",
+      "priceBelow": "Fiyat Altında",
+      "crossVwap": "VWAP Kesişimi",
+      "crossVal": "VAL Kesişimi",
+      "crossVah": "VAH Kesişimi"
+    },
+    "notifications": {
+      "visual": "Görsel",
+      "sound": "Ses",
+      "osNative": "Sistem Bildirimi",
+      "webhook": "Webhook"
+    }
+  },
+  "settings": {
+    "title": "Ayarlar",
+    "general": {
+      "title": "Genel",
+      "language": "Dil",
+      "theme": "Tema",
+      "themes": {
+        "light": "Açık",
+        "dark": "Koyu",
+        "system": "Sistem"
+      }
+    },
+    "trading": {
+      "title": "İşlem",
+      "defaultRisk": "Varsayılan Risk %",
+      "maxDailyLoss": "Günlük Maks. Kayıp %",
+      "confirmOrders": "Emirleri Onayla",
+      "soundAlerts": "Sesli Uyarılar"
+    },
+    "api": {
+      "title": "API Yapılandırması",
+      "exchange": "Borsa",
+      "apiKey": "API Anahtarı",
+      "apiSecret": "API Secret",
+      "testConnection": "Bağlantıyı Test Et",
+      "connected": "Bağlı",
+      "disconnected": "Bağlı Değil",
+      "connectionFailed": "Bağlantı Başarısız"
+    },
+    "security": {
+      "title": "Güvenlik",
+      "changePassword": "Şifre Değiştir",
+      "twoFactor": "İki Faktörlü Doğrulama",
+      "sessionTimeout": "Oturum Zaman Aşımı"
+    },
+    "about": {
+      "title": "Hakkında",
+      "version": "Versiyon",
+      "checkUpdates": "Güncellemeleri Kontrol Et",
+      "releaseNotes": "Sürüm Notları",
+      "documentation": "Dokümantasyon",
+      "support": "Destek"
+    }
+  },
+  "exchange": {
+    "binance": "Binance",
+    "bybit": "Bybit",
+    "connected": "Bağlı",
+    "disconnected": "Bağlı Değil",
+    "connecting": "Bağlanıyor...",
+    "reconnecting": "Yeniden Bağlanıyor...",
+    "testnet": "Testnet",
+    "mainnet": "Mainnet"
+  },
+  "balance": {
+    "title": "Hesap Bakiyesi",
+    "totalEquity": "Toplam Varlık",
+    "available": "Kullanılabilir",
+    "unrealizedPnl": "Gerçekleşmemiş K/Z"
+  },
+  "chart": {
+    "title": "Fiyat Grafiği",
+    "interval": "Aralık",
+    "high24h": "24s Yüksek",
+    "low24h": "24s Düşük",
+    "volume24h": "24s Hacim"
+  },
+  "drawingTools": {
+    "categories": {
+      "cursor": "İmleç",
+      "lines": "Çizgiler",
+      "fibonacci": "Fibonacci",
+      "patterns": "Formasyonlar",
+      "shapes": "Şekiller",
+      "annotations": "Notlar",
+      "measure": "Ölçüm"
+    },
+    "fibonacci": {
+      "retracement": "Fib Düzeltme",
+      "extension": "Trend Bazlı Fib Uzatma",
+      "channel": "Fib Kanalı",
+      "timeZone": "Fib Zaman Dilimi",
+      "fan": "Fib Hız Direnç Yelpazesi",
+      "arc": "Fib Hız Direnç Yayı",
+      "circles": "Fib Çemberleri",
+      "wedge": "Fib Kama"
+    },
+    "lines": {
+      "trendLine": "Trend Çizgisi",
+      "ray": "Işın",
+      "infoLine": "Bilgi Çizgisi",
+      "extendedLine": "Uzatılmış Çizgi",
+      "trendAngle": "Trend Açısı",
+      "horizontal": "Yatay Çizgi",
+      "horizontalRay": "Yatay Işın",
+      "vertical": "Dikey Çizgi",
+      "crossLine": "Çapraz Çizgi",
+      "parallelChannel": "Paralel Kanal"
+    },
+    "settings": {
+      "style": "Stil",
+      "coordinates": "Koordinatlar",
+      "levels": "Seviyeler",
+      "visibility": "Görünürlük",
+      "editLevels": "Fibonacci seviyelerini düzenle",
+      "addLevel": "Seviye Ekle",
+      "presetLevels": "Hazır Seviyeler",
+      "internalLevels": "Dahili (0-1)",
+      "externalLevels": "Harici (>1)",
+      "extensionLevels": "Uzatma (<0)",
+      "labelsLeft": "Etiketler Solda",
+      "labelsRight": "Etiketler Sağda",
+      "showPrices": "Fiyatları Göster",
+      "showLevels": "Seviyeleri Göster",
+      "showPercent": "Yüzde Olarak Göster",
+      "extendLeft": "Sola Uzat",
+      "extendRight": "Sağa Uzat",
+      "reverseDirection": "Yönü Ters Çevir",
+      "lockDrawing": "Çizimi Kilitle",
+      "lockDescription": "Yanlışlıkla değişiklikleri önle",
+      "hideDrawing": "Çizimi Gizle",
+      "hideDescription": "Bu çizimi geçici olarak gizle",
+      "drawingName": "Çizim Adı",
+      "showOnTimeframes": "Zaman Dilimlerinde Göster",
+      "price": "Fiyat",
+      "time": "Zaman",
+      "point": "Nokta"
+    },
+    "presets": {
+      "standard": "Standart",
+      "goldenZone": "Altın Bölge",
+      "extensions": "Uzatmalar",
+      "custom": "Özel"
+    }
+  },
+  "symbols": {
+    "title": "Piyasalar",
+    "price": "Fiyat",
+    "change": "Değişim"
+  },
+  "errors": {
+    "general": "Bir hata oluştu",
+    "network": "Ağ hatası. Lütfen bağlantınızı kontrol edin.",
+    "api": "API hatası. Lütfen tekrar deneyin.",
+    "validation": "Lütfen girişlerinizi kontrol edin.",
+    "unauthorized": "Yetkisiz erişim. Lütfen tekrar giriş yapın.",
+    "notFound": "Bulunamadı.",
+    "rateLimit": "Çok fazla istek. Lütfen bekleyin.",
+    "insufficientBalance": "Yetersiz bakiye.",
+    "orderFailed": "Emir başarısız. Lütfen tekrar deneyin.",
+    "connectionLost": "Bağlantı kesildi. Yeniden bağlanmaya çalışılıyor..."
+  },
+  "notifications": {
+    "orderPlaced": "Emir başarıyla verildi",
+    "orderCancelled": "Emir iptal edildi",
+    "orderFilled": "Emir gerçekleşti",
+    "positionOpened": "Pozisyon açıldı",
+    "positionClosed": "Pozisyon kapatıldı",
+    "alertTriggered": "Alarm tetiklendi",
+    "settingsSaved": "Ayarlar kaydedildi",
+    "connectionRestored": "Bağlantı yeniden kuruldu"
+  },
+  "confirmations": {
+    "closePosition": "Bu pozisyonu kapatmak istediğinizden emin misiniz?",
+    "cancelOrder": "Bu emri iptal etmek istediğinizden emin misiniz?",
+    "cancelAllOrders": "Tüm emirleri iptal etmek istediğinizden emin misiniz?",
+    "deleteAlert": "Bu alarmı silmek istediğinizden emin misiniz?",
+    "resetSettings": "Tüm ayarları sıfırlamak istediğinizden emin misiniz?"
+  },
+  "tooltips": {
+    "riskPercent": "İşlem başına riske edilecek hesap bakiyesi yüzdesi",
+    "stopLoss": "İşlem aleyhinize giderse çıkış yapılacak fiyat seviyesi",
+    "takeProfit": "Kar almak için çıkış yapılacak fiyat seviyesi",
+    "positionSize": "Riske göre alınacak/satılacak adet sayısı",
+    "riskRewardRatio": "Potansiyel karın potansiyel zarara oranı"
+  },
+  "time": {
+    "seconds": "saniye",
+    "minutes": "dakika",
+    "hours": "saat",
+    "days": "gün",
+    "ago": "önce",
+    "now": "Az önce"
+  },
+  "footer": {
+    "copyright": "Tüm hakları saklıdır",
+    "terms": "Kullanım Şartları",
+    "privacy": "Gizlilik Politikası"
+  }
+}

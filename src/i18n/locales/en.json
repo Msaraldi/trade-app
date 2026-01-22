@@ -1,0 +1,383 @@
+{
+  "app": {
+    "name": "AlgoTrade OS",
+    "version": "Version",
+    "demoMode": "Demo Mode",
+    "liveMode": "Live Mode"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "close": "Close",
+    "confirm": "Confirm",
+    "back": "Back",
+    "next": "Next",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "warning": "Warning",
+    "info": "Info",
+    "yes": "Yes",
+    "no": "No",
+    "search": "Search",
+    "filter": "Filter",
+    "reset": "Reset",
+    "apply": "Apply",
+    "refresh": "Refresh",
+    "export": "Export",
+    "import": "Import",
+    "settings": "Settings",
+    "help": "Help",
+    "logout": "Logout",
+    "login": "Login",
+    "active": "Active",
+    "inactive": "Inactive",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "on": "On",
+    "off": "Off"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "trading": "Trading",
+    "positions": "Positions",
+    "orders": "Orders",
+    "history": "History",
+    "analytics": "Analytics",
+    "settings": "Settings",
+    "modules": "Modules",
+    "alerts": "Alerts"
+  },
+  "moduleStore": {
+    "title": "Barbar Tools",
+    "subtitle": "Activate trading tools and features",
+    "tradingAccess": "Trading Access",
+    "analysisOnly": "Analysis Only",
+    "activate": "Activate",
+    "deactivate": "Deactivate",
+    "installed": "Installed",
+    "available": "Available",
+    "update": "Update",
+    "configure": "Configure"
+  },
+  "modules": {
+    "stopLoss": {
+      "name": "Smart Stop-Loss",
+      "description": "Intelligent stop-loss management with auto-breakeven"
+    },
+    "batchTrading": {
+      "name": "Batch Trading",
+      "description": "Bulk trading and asset group management"
+    },
+    "vwapAnalyzer": {
+      "name": "VWAP Analyzer",
+      "description": "VWAP, VAL/VAH calculation and visualization"
+    },
+    "riskMonitor": {
+      "name": "Risk Monitor",
+      "description": "Cumulative risk tracking and daily limit control"
+    },
+    "smaAnalyzer": {
+      "name": "SMA Analysis",
+      "description": "Simple Moving Averages - Critical levels tracked by major funds"
+    },
+    "anchoredVwap": {
+      "name": "Anchored VWAP",
+      "description": "VWAP from a specific anchor point to current time"
+    },
+    "strategyBuilder": {
+      "name": "Strategy Builder",
+      "description": "Create custom trading signals by combining multiple indicators"
+    }
+  },
+  "riskCalculator": {
+    "title": "Risk Calculator",
+    "subtitle": "Calculate optimal position size based on risk",
+    "accountBalance": "Account Balance",
+    "riskPercent": "Risk Percentage",
+    "entryPrice": "Entry Price",
+    "stopLoss": "Stop Loss",
+    "takeProfit": "Take Profit",
+    "calculate": "Calculate Position Size",
+    "results": {
+      "title": "Results",
+      "positionSize": "Position Size",
+      "units": "units",
+      "riskAmount": "Risk Amount",
+      "potentialLoss": "Potential Loss",
+      "potentialProfit": "Potential Profit",
+      "riskRewardRatio": "Risk/Reward Ratio"
+    }
+  },
+  "globalRisk": {
+    "title": "Global Risk Exposure",
+    "current": "Current",
+    "max": "Max",
+    "available": "Available",
+    "warning": "Risk limit approaching",
+    "exceeded": "Risk limit exceeded"
+  },
+  "positions": {
+    "title": "Open Positions",
+    "noPositions": "No open positions",
+    "symbol": "Symbol",
+    "side": "Side",
+    "long": "Long",
+    "short": "Short",
+    "entryPrice": "Entry Price",
+    "currentPrice": "Current Price",
+    "quantity": "Quantity",
+    "pnl": "P&L",
+    "pnlPercent": "P&L %",
+    "stopLoss": "Stop Loss",
+    "takeProfit": "Take Profit",
+    "closePosition": "Close Position",
+    "modifyPosition": "Modify Position"
+  },
+  "orders": {
+    "title": "Orders",
+    "openOrders": "Open Orders",
+    "orderHistory": "Order History",
+    "noOrders": "No open orders",
+    "symbol": "Symbol",
+    "type": "Type",
+    "side": "Side",
+    "buy": "Buy",
+    "sell": "Sell",
+    "price": "Price",
+    "quantity": "Quantity",
+    "filled": "Filled",
+    "status": "Status",
+    "cancelOrder": "Cancel Order",
+    "cancelAll": "Cancel All",
+    "orderTypes": {
+      "market": "Market",
+      "limit": "Limit",
+      "stopMarket": "Stop Market",
+      "stopLimit": "Stop Limit"
+    },
+    "orderStatus": {
+      "pending": "Pending",
+      "filled": "Filled",
+      "partiallyFilled": "Partially Filled",
+      "cancelled": "Cancelled",
+      "rejected": "Rejected"
+    }
+  },
+  "alerts": {
+    "title": "Alerts",
+    "createAlert": "Create Alert",
+    "editAlert": "Edit Alert",
+    "deleteAlert": "Delete Alert",
+    "noAlerts": "No alerts configured",
+    "symbol": "Symbol",
+    "condition": "Condition",
+    "targetPrice": "Target Price",
+    "notification": "Notification",
+    "conditions": {
+      "priceAbove": "Price Above",
+      "priceBelow": "Price Below",
+      "crossVwap": "Cross VWAP",
+      "crossVal": "Cross VAL",
+      "crossVah": "Cross VAH"
+    },
+    "notifications": {
+      "visual": "Visual",
+      "sound": "Sound",
+      "osNative": "System Notification",
+      "webhook": "Webhook"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "general": {
+      "title": "General",
+      "language": "Language",
+      "theme": "Theme",
+      "themes": {
+        "light": "Light",
+        "dark": "Dark",
+        "system": "System"
+      }
+    },
+    "trading": {
+      "title": "Trading",
+      "defaultRisk": "Default Risk %",
+      "maxDailyLoss": "Max Daily Loss %",
+      "confirmOrders": "Confirm Orders",
+      "soundAlerts": "Sound Alerts"
+    },
+    "api": {
+      "title": "API Configuration",
+      "exchange": "Exchange",
+      "apiKey": "API Key",
+      "apiSecret": "API Secret",
+      "testConnection": "Test Connection",
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "connectionFailed": "Connection Failed"
+    },
+    "security": {
+      "title": "Security",
+      "changePassword": "Change Password",
+      "twoFactor": "Two-Factor Authentication",
+      "sessionTimeout": "Session Timeout"
+    },
+    "about": {
+      "title": "About",
+      "version": "Version",
+      "checkUpdates": "Check for Updates",
+      "releaseNotes": "Release Notes",
+      "documentation": "Documentation",
+      "support": "Support"
+    }
+  },
+  "exchange": {
+    "binance": "Binance",
+    "bybit": "Bybit",
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "connecting": "Connecting...",
+    "reconnecting": "Reconnecting...",
+    "testnet": "Testnet",
+    "mainnet": "Mainnet"
+  },
+  "balance": {
+    "title": "Account Balance",
+    "totalEquity": "Total Equity",
+    "available": "Available",
+    "unrealizedPnl": "Unrealized P&L"
+  },
+  "chart": {
+    "title": "Price Chart",
+    "interval": "Interval",
+    "high24h": "24h High",
+    "low24h": "24h Low",
+    "volume24h": "24h Volume"
+  },
+  "drawingTools": {
+    "categories": {
+      "cursor": "Cursor",
+      "lines": "Lines",
+      "fibonacci": "Fibonacci",
+      "patterns": "Patterns",
+      "shapes": "Shapes",
+      "annotations": "Annotations",
+      "measure": "Measure"
+    },
+    "fibonacci": {
+      "retracement": "Fib Retracement",
+      "extension": "Trend-Based Fib Extension",
+      "channel": "Fib Channel",
+      "timeZone": "Fib Time Zone",
+      "fan": "Fib Speed Resistance Fan",
+      "arc": "Fib Speed Resistance Arc",
+      "circles": "Fib Circles",
+      "wedge": "Fib Wedge"
+    },
+    "lines": {
+      "trendLine": "Trend Line",
+      "ray": "Ray",
+      "infoLine": "Info Line",
+      "extendedLine": "Extended Line",
+      "trendAngle": "Trend Angle",
+      "horizontal": "Horizontal Line",
+      "horizontalRay": "Horizontal Ray",
+      "vertical": "Vertical Line",
+      "crossLine": "Cross Line",
+      "parallelChannel": "Parallel Channel"
+    },
+    "settings": {
+      "style": "Style",
+      "coordinates": "Coordinates",
+      "levels": "Levels",
+      "visibility": "Visibility",
+      "editLevels": "Edit Fibonacci levels",
+      "addLevel": "Add Level",
+      "presetLevels": "Preset Levels",
+      "internalLevels": "Internal (0-1)",
+      "externalLevels": "External (>1)",
+      "extensionLevels": "Extension (<0)",
+      "labelsLeft": "Labels on Left",
+      "labelsRight": "Labels on Right",
+      "showPrices": "Show Prices",
+      "showLevels": "Show Levels",
+      "showPercent": "Show as Percent",
+      "extendLeft": "Extend Left",
+      "extendRight": "Extend Right",
+      "reverseDirection": "Reverse Direction",
+      "lockDrawing": "Lock Drawing",
+      "lockDescription": "Prevent accidental modifications",
+      "hideDrawing": "Hide Drawing",
+      "hideDescription": "Temporarily hide this drawing",
+      "drawingName": "Drawing Name",
+      "showOnTimeframes": "Show on Timeframes",
+      "price": "Price",
+      "time": "Time",
+      "point": "Point"
+    },
+    "presets": {
+      "standard": "Standard",
+      "goldenZone": "Golden Zone",
+      "extensions": "Extensions",
+      "custom": "Custom"
+    }
+  },
+  "symbols": {
+    "title": "Markets",
+    "price": "Price",
+    "change": "Change"
+  },
+  "errors": {
+    "general": "An error occurred",
+    "network": "Network error. Please check your connection.",
+    "api": "API error. Please try again.",
+    "validation": "Please check your input.",
+    "unauthorized": "Unauthorized. Please login again.",
+    "notFound": "Not found.",
+    "rateLimit": "Too many requests. Please wait.",
+    "insufficientBalance": "Insufficient balance.",
+    "orderFailed": "Order failed. Please try again.",
+    "connectionLost": "Connection lost. Attempting to reconnect..."
+  },
+  "notifications": {
+    "orderPlaced": "Order placed successfully",
+    "orderCancelled": "Order cancelled",
+    "orderFilled": "Order filled",
+    "positionOpened": "Position opened",
+    "positionClosed": "Position closed",
+    "alertTriggered": "Alert triggered",
+    "settingsSaved": "Settings saved",
+    "connectionRestored": "Connection restored"
+  },
+  "confirmations": {
+    "closePosition": "Are you sure you want to close this position?",
+    "cancelOrder": "Are you sure you want to cancel this order?",
+    "cancelAllOrders": "Are you sure you want to cancel all orders?",
+    "deleteAlert": "Are you sure you want to delete this alert?",
+    "resetSettings": "Are you sure you want to reset all settings?"
+  },
+  "tooltips": {
+    "riskPercent": "Percentage of account balance to risk per trade",
+    "stopLoss": "Price level to exit if trade goes against you",
+    "takeProfit": "Price level to exit and take profit",
+    "positionSize": "Number of units to buy/sell based on risk",
+    "riskRewardRatio": "Potential profit compared to potential loss"
+  },
+  "time": {
+    "seconds": "seconds",
+    "minutes": "minutes",
+    "hours": "hours",
+    "days": "days",
+    "ago": "ago",
+    "now": "Just now"
+  },
+  "footer": {
+    "copyright": "All rights reserved",
+    "terms": "Terms of Service",
+    "privacy": "Privacy Policy"
+  }
+}
