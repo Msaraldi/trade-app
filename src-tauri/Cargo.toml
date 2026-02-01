@@ -1,6 +1,6 @@
 [package]
 name = "algotrade-os"
-version = "0.1.0"
+version = "0.1.1"
 description = "AlgoTrade OS - Modular Trading Platform"
 authors = ["Meliksah"]
 edition = "2021"
