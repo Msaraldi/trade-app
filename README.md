@@ -23,23 +23,55 @@ A modular cryptocurrency trading platform built with Tauri, React, and Rust. Fea
 
 ### Windows
 
-1. **Download:** [AlgoTrade.OS_0.1.0_x64-setup.exe](https://github.com/Msaraldi/trade-app/releases/download/v0.1.0/AlgoTrade.OS_0.1.0_x64-setup.exe) (3.9 MB)
+1. **Download:** [AlgoTrade.OS_0.1.1_x64-setup.exe](https://github.com/Msaraldi/trade-app/releases/download/v0.1.1/AlgoTrade.OS_0.1.1_x64-setup.exe)
 2. **Run** the downloaded `.exe` file
-3. **Follow** the installation wizard
-4. **Launch** AlgoTrade OS from Start Menu or Desktop
+3. **SmartScreen Warning:** If you see "Windows protected your PC":
+   - Click **"More info"**
+   - Click **"Run anyway"**
+4. **Follow** the installation wizard
+5. **Launch** AlgoTrade OS from Start Menu or Desktop
 
-> Alternative: [AlgoTrade.OS_0.1.0_x64_en-US.msi](https://github.com/Msaraldi/trade-app/releases/download/v0.1.0/AlgoTrade.OS_0.1.0_x64_en-US.msi) (5.5 MB)
+> Alternative: [AlgoTrade.OS_0.1.1_x64_en-US.msi](https://github.com/Msaraldi/trade-app/releases/download/v0.1.1/AlgoTrade.OS_0.1.1_x64_en-US.msi)
 
 ### macOS (Apple Silicon - M1/M2/M3)
 
-1. **Download:** [AlgoTrade.OS_0.1.0_aarch64.dmg](https://github.com/Msaraldi/trade-app/releases/download/v0.1.0/AlgoTrade.OS_0.1.0_aarch64.dmg) (5.7 MB)
+1. **Download:** [AlgoTrade.OS_0.1.1_aarch64.dmg](https://github.com/Msaraldi/trade-app/releases/download/v0.1.1/AlgoTrade.OS_0.1.1_aarch64.dmg)
 2. **Open** the `.dmg` file
 3. **Drag** AlgoTrade OS to Applications folder
-4. **First launch:** Right-click > Open (to bypass Gatekeeper)
+4. **First launch - Choose one method:**
+
+   **Method A - Right-click (Easiest):**
+   - Right-click (or Control+click) on AlgoTrade OS in Applications
+   - Select **"Open"** from the menu
+   - Click **"Open"** in the dialog that appears
+   - App will launch and be trusted for future opens
+
+   **Method B - System Settings:**
+   - Double-click the app (you'll see "damaged" error)
+   - Open **System Settings** → **Privacy & Security**
+   - Scroll down to find **"AlgoTrade OS was blocked"**
+   - Click **"Open Anyway"**
+   - Enter your password if prompted
+   - Click **"Open"** in the final dialog
+
+   **Method C - Terminal:**
+   ```bash
+   xattr -cr /Applications/AlgoTrade\ OS.app
+   ```
+   Then double-click to open normally.
+
+> **Why this happens:** macOS blocks apps from unidentified developers. This is a security feature called Gatekeeper. The app is safe - it's just not signed with an Apple Developer certificate yet.
 
 ### Linux
 
-Coming soon in next release. For now, build from source (see below).
+1. **Download:** [AlgoTrade.OS_0.1.1_amd64.deb](https://github.com/Msaraldi/trade-app/releases/download/v0.1.1/AlgoTrade.OS_0.1.1_amd64.deb) (Debian/Ubuntu)
+2. **Install:**
+   ```bash
+   sudo dpkg -i AlgoTrade.OS_0.1.1_amd64.deb
+   ```
+3. **Launch** from Applications menu or run `algotrade-os`
+
+> Alternative: [AlgoTrade.OS_0.1.1_amd64.AppImage](https://github.com/Msaraldi/trade-app/releases/download/v0.1.1/AlgoTrade.OS_0.1.1_amd64.AppImage) - No installation needed, just make executable and run.
 
 ---
 
