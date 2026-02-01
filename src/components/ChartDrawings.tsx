@@ -121,6 +121,28 @@ export interface DrawingStyle {
   takeProfit?: number;
   quantity?: number;
   riskReward?: number;
+  // Pitchfork specific
+  pitchforkLevels?: number[];        // e.g., [0.25, 0.5, 0.75, 1]
+  pitchforkColors?: string[];        // Colors for each level
+  medianColor?: string;              // Median line color
+  showMedian?: boolean;              // Show/hide median line
+  showPitchforkLevels?: boolean;     // Show/hide level lines
+  // Parallel Channel specific
+  channelLevels?: number[];          // e.g., [0.25, 0.5, 0.75]
+  showMiddleLine?: boolean;          // Show middle line
+  // Anchored VWAP specific
+  vwapSource?: "hlc3" | "hl2" | "ohlc4" | "close";
+  vwapBands?: number[];              // Standard deviation multipliers [1, 2, 3]
+  vwapBandColors?: string[];         // Colors for each band
+  showVwapBands?: boolean;           // Show/hide bands
+  // Arrow marker specific
+  arrowDirection?: "up" | "down";
+  arrowSize?: number;
+  // Info line specific
+  showPriceDiff?: boolean;
+  showPercentDiff?: boolean;
+  showBarCount?: boolean;
+  showTimeDiff?: boolean;
 }
 
 export interface DrawingPoint {
@@ -142,6 +164,7 @@ export interface Drawing {
   // Extended properties
   name?: string;           // Custom name for the drawing
   timeframes?: string[];   // Which timeframes to show this drawing on
+  group_id?: string;       // Drawing group/folder ID
 }
 
 // Tool category definitions - Expanded
@@ -194,8 +217,8 @@ export const DRAWING_TOOLS: {
     description: "Kanal oluşturan iki paralel çizgi" },
   { id: "disjoint_channel", category: "channels", label: "Ayrık Kanal", icon: "⫽", requiredPoints: 4,
     description: "Bağımsız çizgilerle paralel olmayan kanal" },
-  { id: "flat_top_bottom", category: "channels", label: "Düz Üst/Alt", icon: "▭", requiredPoints: 3,
-    description: "Bir yatay çizgili kanal" },
+  { id: "flat_top_bottom", category: "channels", label: "Düz Üst/Alt", icon: "▭", requiredPoints: 2,
+    description: "Yatay konsolidasyon bölgesi" },
   { id: "regression_trend", category: "channels", label: "Regresyon Trendi", icon: "≈", requiredPoints: 2,
     description: "İstatistiksel regresyon kanalı" },
 
@@ -224,7 +247,7 @@ export const DRAWING_TOOLS: {
     description: "Fibonacci arcs" },
   { id: "fib_circles", category: "fibonacci", label: "Fib Circles", icon: "F○", requiredPoints: 2,
     description: "Fibonacci circles" },
-  { id: "fib_wedge", category: "fibonacci", label: "Fib Wedge", icon: "FW", requiredPoints: 2,
+  { id: "fib_wedge", category: "fibonacci", label: "Fib Wedge", icon: "FW", requiredPoints: 3,
     description: "Fibonacci wedge pattern" },
 
   // ========== GANN TOOLS ==========
@@ -364,6 +387,27 @@ export const FIBONACCI_COLORS = [
   "#795548", // 3.618
   "#607D8B", // 4.236
 ];
+
+// Pitchfork levels and colors (TradingView default)
+export const PITCHFORK_LEVELS = [0.25, 0.5, 0.75, 1, 1.5, 1.75, 2];
+export const PITCHFORK_COLORS = [
+  "#787B86", // 0.25
+  "#2962FF", // 0.5 (median parallel)
+  "#787B86", // 0.75
+  "#089981", // 1 (upper/lower)
+  "#787B86", // 1.5
+  "#787B86", // 1.75
+  "#787B86", // 2
+];
+export const PITCHFORK_MEDIAN_COLOR = "#FF9800"; // Orange for median
+
+// Parallel Channel levels
+export const CHANNEL_LEVELS = [0.25, 0.5, 0.75];
+export const CHANNEL_COLORS = ["#787B86", "#2962FF", "#787B86"];
+
+// VWAP Band settings
+export const VWAP_BAND_MULTIPLIERS = [1, 2, 3]; // Standard deviations
+export const VWAP_BAND_COLORS = ["#2962FF40", "#2962FF25", "#2962FF15"];
 
 // Gann angles (price/time ratios)
 export const GANN_ANGLES = [

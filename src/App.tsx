@@ -10,6 +10,7 @@ import { SmaSettings, SmaConfig, getDefaultSmaConfigs } from "./components/SmaSe
 import { AnchoredVwapSettings, AnchoredVwapConfig, getDefaultAnchoredVwapConfigs } from "./components/AnchoredVwapSettings";
 import { StrategyBuilder, Strategy, getDefaultStrategies } from "./components/StrategyBuilder";
 import { ColorProvider } from "./components/ColorSettings";
+import { ResizablePanel } from "./components/ResizablePanel";
 
 // Types
 interface RiskCalculation {
@@ -96,6 +97,10 @@ function App() {
 
   // Strategy Builder Configuration
   const [strategies, setStrategies] = useState<Strategy[]>(getDefaultStrategies());
+
+  // Sidebar collapse state
+  const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
 
   useEffect(() => {
     // Get version and modules on mount
@@ -207,6 +212,38 @@ function App() {
               </div>
             )}
 
+            {/* Sidebar Toggle Buttons */}
+            <div className="flex items-center gap-1 border-r border-dark-700 pr-4 mr-2">
+              <button
+                onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
+                className={`p-1.5 rounded-lg transition-colors ${
+                  leftSidebarOpen
+                    ? "bg-primary-600 text-white"
+                    : "bg-dark-700 text-dark-400 hover:text-white hover:bg-dark-600"
+                }`}
+                title={leftSidebarOpen ? "Sembol Listesini Gizle" : "Sembol Listesini Göster"}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M9 3v18" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
+                className={`p-1.5 rounded-lg transition-colors ${
+                  rightSidebarOpen
+                    ? "bg-primary-600 text-white"
+                    : "bg-dark-700 text-dark-400 hover:text-white hover:bg-dark-600"
+                }`}
+                title={rightSidebarOpen ? "Paneli Gizle" : "Paneli Göster"}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M15 3v18" />
+                </svg>
+              </button>
+            </div>
+
             <LanguageSwitcher />
 
             {/* Connection status / API button */}
@@ -254,9 +291,19 @@ function App() {
       </header>
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
         {/* Left Sidebar - Symbol List */}
-        <aside className="w-64 border-r border-dark-700 flex-shrink-0 flex flex-col overflow-hidden">
+        <ResizablePanel
+          side="left"
+          defaultWidth={256}
+          minWidth={200}
+          maxWidth={400}
+          isOpen={leftSidebarOpen}
+          onToggle={() => setLeftSidebarOpen(!leftSidebarOpen)}
+          title="Semboller"
+          floatable={true}
+          className="border-r border-dark-700"
+        >
           <SymbolList
             selectedSymbol={selectedSymbol}
             selectedCategory={selectedCategory}
@@ -265,10 +312,10 @@ function App() {
               setSelectedCategory(category);
             }}
           />
-        </aside>
+        </ResizablePanel>
 
         {/* Center - Chart */}
-        <main className="flex-1 flex flex-col min-w-0 min-h-0 p-2 overflow-hidden">
+        <main className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
           <PriceChart
             symbol={selectedSymbol}
             category={selectedCategory}
@@ -282,33 +329,44 @@ function App() {
         </main>
 
         {/* Right Sidebar - Modules & Risk Calculator */}
-        <aside className="w-80 border-l border-dark-700 flex flex-col flex-shrink-0">
-          {/* Tabs */}
-          <div className="flex border-b border-dark-700">
-            <button
-              onClick={() => setActiveTab("modules")}
-              className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                activeTab === "modules"
-                  ? "text-primary-400 border-b-2 border-primary-400"
-                  : "text-dark-400 hover:text-white"
-              }`}
-            >
-              {t("moduleStore.title")}
-            </button>
-            <button
-              onClick={() => setActiveTab("risk")}
-              className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                activeTab === "risk"
-                  ? "text-primary-400 border-b-2 border-primary-400"
-                  : "text-dark-400 hover:text-white"
-              }`}
-            >
-              {t("riskCalculator.title")}
-            </button>
-          </div>
+        <ResizablePanel
+          side="right"
+          defaultWidth={320}
+          minWidth={280}
+          maxWidth={500}
+          isOpen={rightSidebarOpen}
+          onToggle={() => setRightSidebarOpen(!rightSidebarOpen)}
+          title={activeTab === "modules" ? t("moduleStore.title") : t("riskCalculator.title")}
+          floatable={true}
+          className="border-l border-dark-700"
+        >
+          <div className="flex flex-col h-full">
+            {/* Tabs */}
+            <div className="flex border-b border-dark-700 flex-shrink-0">
+              <button
+                onClick={() => setActiveTab("modules")}
+                className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
+                  activeTab === "modules"
+                    ? "text-primary-400 border-b-2 border-primary-400"
+                    : "text-dark-400 hover:text-white"
+                }`}
+              >
+                {t("moduleStore.title")}
+              </button>
+              <button
+                onClick={() => setActiveTab("risk")}
+                className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
+                  activeTab === "risk"
+                    ? "text-primary-400 border-b-2 border-primary-400"
+                    : "text-dark-400 hover:text-white"
+                }`}
+              >
+                {t("riskCalculator.title")}
+              </button>
+            </div>
 
-          {/* Tab Content */}
-          <div className="flex-1 overflow-y-auto p-4">
+            {/* Tab Content */}
+            <div className="flex-1 overflow-y-auto p-4">
             {activeTab === "modules" ? (
               /* Module Store */
               <div className="space-y-3">
@@ -518,19 +576,20 @@ function App() {
             )}
           </div>
 
-          {/* Global Risk Bar */}
-          <div className="p-4 border-t border-dark-700">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-dark-400">{t("globalRisk.title")}</span>
-              <span className="text-xs text-primary-400">
-                0% / 10% {t("globalRisk.max").toLowerCase()}
-              </span>
-            </div>
-            <div className="h-1.5 bg-dark-700 rounded-full overflow-hidden">
-              <div className="h-full w-0 bg-primary-500 rounded-full transition-all"></div>
+            {/* Global Risk Bar */}
+            <div className="p-4 border-t border-dark-700 flex-shrink-0">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-dark-400">{t("globalRisk.title")}</span>
+                <span className="text-xs text-primary-400">
+                  0% / 10% {t("globalRisk.max").toLowerCase()}
+                </span>
+              </div>
+              <div className="h-1.5 bg-dark-700 rounded-full overflow-hidden">
+                <div className="h-full w-0 bg-primary-500 rounded-full transition-all"></div>
+              </div>
             </div>
           </div>
-        </aside>
+        </ResizablePanel>
       </div>
 
       {/* API Settings Modal */}

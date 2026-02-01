@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   DrawingTool,
@@ -124,6 +124,55 @@ export function ChartToolbar({
     }
   });
 
+  // Track last selected tool per category for TradingView-style grouping
+  const [selectedToolPerCategory, setSelectedToolPerCategory] = useState<Record<string, DrawingTool>>(() => {
+    try {
+      const saved = localStorage.getItem("chart_selected_tools_per_category");
+      return saved ? JSON.parse(saved) : {
+        lines: "trendline",
+        channels: "parallel_channel",
+        pitchfork: "pitchfork",
+        fibonacci: "fib_retracement",
+        gann: "gann_box",
+        patterns: "xabcd_pattern",
+        shapes: "rectangle",
+        volume: "anchored_vwap",
+        measure: "price_range",
+        annotation: "text",
+      };
+    } catch {
+      return {
+        lines: "trendline",
+        channels: "parallel_channel",
+        pitchfork: "pitchfork",
+        fibonacci: "fib_retracement",
+        gann: "gann_box",
+        patterns: "xabcd_pattern",
+        shapes: "rectangle",
+        volume: "anchored_vwap",
+        measure: "price_range",
+        annotation: "text",
+      };
+    }
+  });
+
+  // Save selected tools per category
+  useEffect(() => {
+    localStorage.setItem("chart_selected_tools_per_category", JSON.stringify(selectedToolPerCategory));
+  }, [selectedToolPerCategory]);
+
+  // Update selected tool per category when tool changes
+  const handleToolChangeWithCategory = useCallback((tool: DrawingTool) => {
+    const toolInfo = getToolInfo(tool);
+    if (toolInfo) {
+      setSelectedToolPerCategory(prev => ({
+        ...prev,
+        [toolInfo.category]: tool
+      }));
+    }
+    onToolChange(tool);
+  }, [onToolChange]);
+
   // Save favorites to localStorage
   useEffect(() => {
     localStorage.setItem(FAVORITE_TOOLS_KEY, JSON.stringify(favoriteTools));
@@ -177,289 +226,266 @@ export function ChartToolbar({
   }, []);
 
   return (
-    <div className="flex items-center gap-1.5 px-2 py-1.5 bg-dark-800 border-b border-dark-700 flex-wrap">
-      {/* Interval Selector - Favorites */}
-      <div className="flex items-center gap-0.5 border-r border-dark-600 pr-2 mr-1">
-        {/* Show favorite intervals */}
-        {favoriteIntervals.map((intValue) => {
-          const intOption = intervals.find(i => i.value === intValue);
-          if (!intOption) return null;
-          return (
-            <button
-              key={intOption.value}
-              onClick={() => onIntervalChange(intOption.value)}
-              className={`px-1.5 py-0.5 text-xs rounded transition-colors ${
-                interval === intOption.value
-                  ? "bg-primary-600 text-white"
-                  : "text-dark-300 hover:bg-dark-700 hover:text-white"
-              }`}
-            >
-              {intOption.label}
+    <div className="flex flex-col bg-dark-800 border-b border-dark-700">
+      {/* Main Toolbar Row */}
+      <div className="flex items-center gap-1 px-2 py-1">
+        {/* Interval Selector */}
+        <div className="flex items-center gap-0.5 pr-2 border-r border-dark-600">
+          {favoriteIntervals.map((intValue) => {
+            const intOption = intervals.find(i => i.value === intValue);
+            if (!intOption) return null;
+            return (
+              <button
+                key={intOption.value}
+                onClick={() => onIntervalChange(intOption.value)}
+                className={`px-2 py-1 text-xs rounded transition-colors ${
+                  interval === intOption.value
+                    ? "bg-primary-600 text-white"
+                    : "text-dark-300 hover:bg-dark-700 hover:text-white"
+                }`}
+              >
+                {intOption.label}
+              </button>
+            );
+          })}
+          {isCustomInterval && (
+            <button className="px-2 py-1 text-xs rounded bg-primary-600 text-white">
+              {customIntervalDisplay}
             </button>
-          );
-        })}
-
-        {/* Show custom interval if active */}
-        {isCustomInterval && (
+          )}
           <button
-            className="px-1.5 py-0.5 text-xs rounded bg-primary-600 text-white"
+            onClick={() => setShowAllIntervalsModal(true)}
+            className="p-1 rounded text-dark-400 hover:text-white hover:bg-dark-700 transition-colors"
+            title="Tüm Süreler"
           >
-            {customIntervalDisplay}
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
           </button>
-        )}
+        </div>
 
-        {/* See All Intervals Button */}
-        <button
-          onClick={() => setShowAllIntervalsModal(true)}
-          className="h-6 px-1.5 flex items-center gap-1 rounded text-xs bg-dark-700 text-dark-300 hover:bg-dark-600 hover:text-white transition-colors"
-          title="Tüm Süreler"
-        >
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </button>
-      </div>
+        {/* Cursor & Crosshair */}
+        <div className="flex items-center gap-0.5 px-1">
+          <button
+            onClick={() => onToolChange("none")}
+            className={`w-8 h-8 flex items-center justify-center rounded text-sm transition-all ${
+              activeTool === "none"
+                ? "bg-primary-600 text-white"
+                : "text-dark-300 hover:bg-dark-700 hover:text-white"
+            }`}
+            title="Seç / Kaydır (V)"
+          >
+            ↖
+          </button>
+          <button
+            onClick={() => onToolChange(activeTool === "crosshair" ? "none" : "crosshair")}
+            className={`w-8 h-8 flex items-center justify-center rounded text-sm transition-all ${
+              activeTool === "crosshair"
+                ? "bg-primary-600 text-white"
+                : "text-dark-300 hover:bg-dark-700 hover:text-white"
+            }`}
+            title="Artı İmleç"
+          >
+            +
+          </button>
+        </div>
 
-      {/* Cursor / Selection */}
-      <button
-        onClick={() => onToolChange("none")}
-        className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm transition-all duration-150
-          active:scale-90 focus:outline-none focus:ring-2 focus:ring-primary-500/50 ${
-          activeTool === "none"
-            ? "bg-gradient-to-b from-primary-500 to-primary-600 text-white shadow-md shadow-primary-500/30"
-            : "bg-dark-700 text-dark-300 hover:bg-dark-600 hover:text-white hover:shadow-lg hover:-translate-y-0.5"
-        }`}
-        title="Seç / Kaydır (V)"
-      >
-        ↖
-      </button>
+        <div className="w-px h-6 bg-dark-600" />
 
-      {/* Crosshair */}
-      <button
-        onClick={() => onToolChange(activeTool === "crosshair" ? "none" : "crosshair")}
-        className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm transition-all duration-150
-          active:scale-90 focus:outline-none focus:ring-2 focus:ring-primary-500/50 ${
-          activeTool === "crosshair"
-            ? "bg-gradient-to-b from-primary-500 to-primary-600 text-white shadow-md shadow-primary-500/30"
-            : "bg-dark-700 text-dark-300 hover:bg-dark-600 hover:text-white hover:shadow-lg hover:-translate-y-0.5"
-        }`}
-        title="Artı İmleç"
-      >
-        +
-      </button>
-
-      {/* Divider */}
-      <div className="w-px h-5 bg-dark-600 mx-0.5" />
-
-      {/* Favorite Drawing Tools */}
-      <div className="flex items-center gap-1">
-        {favoriteTools.map((toolId) => {
-          const toolInfo = getToolInfo(toolId);
-          if (!toolInfo) return null;
-
-          return (
-            <button
-              key={toolId}
-              onClick={() => onToolChange(toolId)}
-              className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm transition-all duration-150
-                active:scale-90 focus:outline-none focus:ring-2 focus:ring-primary-500/50 ${
-                activeTool === toolId
-                  ? "bg-gradient-to-b from-primary-500 to-primary-600 text-white shadow-md shadow-primary-500/30"
-                  : "bg-dark-700 text-dark-300 hover:bg-dark-600 hover:text-white hover:shadow-lg hover:-translate-y-0.5"
-              }`}
-              title={toolInfo.label}
-            >
-              {toolInfo.icon}
-            </button>
-          );
-        })}
-
-        {/* See All Button */}
-        <button
-          onClick={() => setShowAllToolsModal(true)}
-          className="h-8 px-3 flex items-center gap-1.5 rounded-lg text-xs
-            bg-gradient-to-b from-primary-500 to-primary-600 text-white shadow-md shadow-primary-500/30
-            hover:from-primary-400 hover:to-primary-500 hover:shadow-lg
-            active:scale-95 transition-all duration-150
-            focus:outline-none focus:ring-2 focus:ring-primary-500/50"
-          title="Tüm Araçlar"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-          <span>Tümü</span>
-        </button>
-      </div>
-
-      {/* Drawing Tool Categories - Hidden, replaced by favorites */}
-      <div className="hidden">
-        {TOOL_CATEGORIES.map((category) => {
+        {/* Drawing Tool Categories - Grouped */}
+        <div className="flex items-center gap-0.5">
+        {TOOL_CATEGORIES.map((category, index) => {
           const categoryTools = getCategoryTools(category.id);
           const hasActiveTool = categoryTools.some((t) => t.id === activeTool);
+          const selectedTool = selectedToolPerCategory[category.id];
+          const selectedToolInfo = getToolInfo(selectedTool as DrawingTool);
+          const displayIcon = selectedToolInfo?.icon || category.icon;
+          const displayLabel = selectedToolInfo?.label || category.label;
+
+          // Add separator after certain groups for visual organization
+          const showSeparatorAfter = ["pitchfork", "gann", "shapes"].includes(category.id);
 
           return (
-            <div key={category.id} className="relative toolbar-dropdown">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveCategory(activeCategory === category.id ? null : category.id);
-                  setShowSettings(false);
-                  setShowAdvancedSettings(false);
-                }}
-                className={`w-7 h-7 flex items-center justify-center rounded text-xs transition-colors ${
-                  activeCategory === category.id || hasActiveTool
-                    ? "bg-primary-600 text-white"
-                    : "bg-dark-700 text-dark-300 hover:bg-dark-600 hover:text-white"
-                }`}
-                title={category.label}
-              >
-                {category.icon}
-              </button>
+            <div key={category.id} className="flex items-center">
+              <div className="relative toolbar-dropdown">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (selectedTool) {
+                      handleToolChangeWithCategory(selectedTool as DrawingTool);
+                    }
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setActiveCategory(activeCategory === category.id ? null : category.id);
+                    setShowSettings(false);
+                    setShowAdvancedSettings(false);
+                  }}
+                  className={`w-8 h-8 flex items-center justify-center rounded text-sm transition-all relative group ${
+                    hasActiveTool
+                      ? "bg-primary-600 text-white"
+                      : "text-dark-300 hover:bg-dark-700 hover:text-white"
+                  }`}
+                  title={`${displayLabel} (sağ tık: diğer araçlar)`}
+                >
+                  <span>{displayIcon}</span>
+                  <span className="absolute bottom-0 right-0.5 text-[7px] opacity-50">▾</span>
+                </button>
 
-              {/* Category Dropdown */}
-              {activeCategory === category.id && (
-                <div className="absolute top-full left-0 mt-1 bg-dark-800 border border-dark-600 rounded-lg shadow-xl z-50 min-w-[180px] max-h-[400px] overflow-y-auto">
-                  <div className="sticky top-0 bg-dark-800 px-3 py-1.5 border-b border-dark-600 text-xs text-dark-400 font-medium">
-                    {category.label}
+                {/* Category Dropdown */}
+                {activeCategory === category.id && (
+                  <div className="absolute top-full left-0 mt-1 bg-dark-800 border border-dark-600 rounded-lg shadow-xl z-50 min-w-[180px] max-h-[350px] overflow-y-auto">
+                    <div className="sticky top-0 bg-dark-800 px-3 py-1.5 border-b border-dark-600 flex items-center justify-between">
+                      <span className="text-xs text-dark-400 font-medium flex items-center gap-1.5">
+                        <span>{category.icon}</span> {category.label}
+                      </span>
+                    </div>
+                    {categoryTools.map((tool) => {
+                      const isFavorite = favoriteTools.includes(tool.id);
+                      return (
+                        <button
+                          key={tool.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToolChangeWithCategory(tool.id);
+                            if (!stayInDrawingMode) {
+                              setActiveCategory(null);
+                            }
+                          }}
+                          className={`w-full px-3 py-1.5 flex items-center gap-2 text-left text-xs transition-colors group/item ${
+                            activeTool === tool.id
+                              ? "bg-primary-600/20 text-primary-400"
+                              : "text-dark-200 hover:bg-dark-700"
+                          }`}
+                          title={tool.description}
+                        >
+                          <span className="w-5 text-center">{tool.icon}</span>
+                          <span className="flex-1">{tool.label}</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFavorite(tool.id);
+                            }}
+                            className={`text-xs transition-opacity ${
+                              isFavorite ? "text-yellow-400" : "text-dark-500 opacity-0 group-hover/item:opacity-100 hover:text-yellow-400"
+                            }`}
+                          >
+                            {isFavorite ? "★" : "☆"}
+                          </button>
+                        </button>
+                      );
+                    })}
                   </div>
-                  {categoryTools.map((tool) => (
-                    <button
-                      key={tool.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToolChange(tool.id);
-                        if (!stayInDrawingMode) {
-                          setActiveCategory(null);
-                        }
-                      }}
-                      className={`w-full px-3 py-1.5 flex items-center gap-2 text-left text-xs transition-colors ${
-                        activeTool === tool.id
-                          ? "bg-primary-600/20 text-primary-400"
-                          : "text-dark-200 hover:bg-dark-700"
-                      }`}
-                      title={tool.description}
-                    >
-                      <span className="w-5 text-center text-sm">{tool.icon}</span>
-                      <span className="flex-1">{tool.label}</span>
-                      {tool.requiredPoints > 0 && (
-                        <span className="text-dark-500 text-[10px]">
-                          {tool.requiredPoints}pt
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
+                )}
+              </div>
+              {/* Separator between groups */}
+              {showSeparatorAfter && <div className="w-px h-5 bg-dark-600 mx-1" />}
             </div>
           );
         })}
       </div>
 
-      {/* Divider */}
-      <div className="w-px h-5 bg-dark-600 mx-0.5" />
+      <div className="w-px h-6 bg-dark-600" />
 
-      {/* Eraser */}
-      <button
-        onClick={() => onToolChange(activeTool === "eraser" ? "none" : "eraser")}
-        className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm transition-all duration-150
-          active:scale-90 focus:outline-none focus:ring-2 focus:ring-danger-500/50 ${
-          activeTool === "eraser"
-            ? "bg-gradient-to-b from-danger-500 to-danger-600 text-white shadow-md shadow-danger-500/30"
-            : "bg-dark-700 text-dark-300 hover:bg-dark-600 hover:text-white hover:shadow-lg hover:-translate-y-0.5"
-        }`}
-        title="Silgi"
-      >
-        ⌫
-      </button>
-
-      {/* Clear All */}
-      {drawingCount > 0 && (
+      {/* Utility Tools */}
+      <div className="flex items-center gap-0.5 px-1">
+        {/* Eraser */}
         <button
-          onClick={onClearAll}
-          className="px-2 h-8 flex items-center gap-1 rounded-lg text-xs bg-danger-900/30 text-danger-400
-            hover:bg-danger-900/50 hover:shadow-lg transition-all duration-150 active:scale-95"
-          title="Tüm Çizimleri Sil"
+          onClick={() => onToolChange(activeTool === "eraser" ? "none" : "eraser")}
+          className={`w-8 h-8 flex items-center justify-center rounded text-sm transition-all ${
+            activeTool === "eraser"
+              ? "bg-danger-600 text-white"
+              : "text-dark-300 hover:bg-dark-700 hover:text-white"
+          }`}
+          title="Silgi"
         >
-          🗑 {drawingCount}
+          ⌫
         </button>
-      )}
+
+        {/* Clear All */}
+        {drawingCount > 0 && (
+          <button
+            onClick={onClearAll}
+            className="px-2 h-8 flex items-center gap-1 rounded text-xs bg-danger-900/30 text-danger-400 hover:bg-danger-900/50 transition-all"
+            title="Tüm Çizimleri Sil"
+          >
+            🗑 {drawingCount}
+          </button>
+        )}
+      </div>
 
       {/* Divider */}
-      <div className="w-px h-5 bg-dark-600 mx-0.5" />
+      <div className="w-px h-6 bg-dark-600 mx-1" />
 
-      {/* Magnet Mode */}
-      <button
-        onClick={() => {
-          const modes: MagnetMode[] = ["none", "weak", "strong"];
-          const currentIndex = modes.indexOf(magnetMode);
-          const nextIndex = (currentIndex + 1) % modes.length;
-          onMagnetChange(modes[nextIndex]);
-        }}
-        className={`h-8 px-2 flex items-center gap-1 rounded-lg text-xs transition-all duration-150
-          active:scale-95 focus:outline-none focus:ring-2 focus:ring-primary-500/50 ${
-          magnetMode !== "none"
-            ? "bg-primary-600 text-white"
-            : "bg-dark-700 text-dark-300 hover:bg-dark-600 hover:text-white"
-        }`}
-        title={`Mıknatıs: ${magnetMode === "none" ? "Kapalı" : magnetMode === "weak" ? "Zayıf" : "Güçlü"} (OHLC'ye yapışır)`}
-      >
-        <span>🧲</span>
-        {magnetMode !== "none" && (
-          <span className="text-[10px]">
-            {magnetMode === "weak" ? "W" : "S"}
-          </span>
-        )}
-      </button>
-
-      {/* Stay in Drawing Mode */}
-      <button
-        onClick={() => onStayInDrawingModeChange(!stayInDrawingMode)}
-        className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs transition-all duration-150
-          active:scale-90 focus:outline-none focus:ring-2 focus:ring-primary-500/50 ${
-          stayInDrawingMode
-            ? "bg-gradient-to-b from-primary-500 to-primary-600 text-white shadow-md shadow-primary-500/30"
-            : "bg-dark-700 text-dark-300 hover:bg-dark-600 hover:text-white hover:shadow-lg hover:-translate-y-0.5"
-        }`}
-        title="Çizim Modunda Kal (yerleştirdikten sonra çizime devam et)"
-      >
-        <span>🔄</span>
-      </button>
-
-      {/* Lock All Drawings */}
-      <button
-        onClick={() => onLockAllChange(!allLocked)}
-        className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs transition-all duration-150
-          active:scale-90 focus:outline-none focus:ring-2 focus:ring-amber-500/50 ${
-          allLocked
-            ? "bg-gradient-to-b from-amber-500 to-amber-600 text-white shadow-md shadow-amber-500/30"
-            : "bg-dark-700 text-dark-300 hover:bg-dark-600 hover:text-white hover:shadow-lg hover:-translate-y-0.5"
-        }`}
-        title={allLocked ? "Tüm Çizimlerin Kilidini Aç" : "Tüm Çizimleri Kilitle"}
-      >
-        {allLocked ? (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+      {/* Utility Tools Group */}
+      <div className="flex items-center gap-0.5">
+        {/* Magnet Mode - 3 colors: gray (off), blue (weak), orange (strong) */}
+        <button
+          onClick={() => {
+            const modes: MagnetMode[] = ["none", "weak", "strong"];
+            const currentIndex = modes.indexOf(magnetMode);
+            const nextIndex = (currentIndex + 1) % modes.length;
+            onMagnetChange(modes[nextIndex]);
+          }}
+          className={`w-8 h-8 flex items-center justify-center rounded text-sm transition-all duration-150
+            active:scale-95 focus:outline-none ${
+            magnetMode === "strong"
+              ? "bg-orange-600 text-white"
+              : magnetMode === "weak"
+              ? "bg-blue-600 text-white"
+              : "bg-dark-700 text-dark-300 hover:bg-dark-600 hover:text-white"
+          }`}
+          title={`Mıknatıs: ${magnetMode === "none" ? "Kapalı" : magnetMode === "weak" ? "Zayıf (Mavi)" : "Güçlü (Turuncu)"}`}
+        >
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M3 7v6a9 9 0 0018 0V7h-4v6a5 5 0 01-10 0V7H3zm4-4h4v8a1 1 0 11-2 0V3H7zm10 0h4v8a1 1 0 11-2 0V3h-2z"/>
           </svg>
-        ) : (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
-          </svg>
-        )}
-      </button>
+        </button>
 
-      {/* Hide All Drawings */}
-      <button
-        onClick={() => onHideAllChange(!allHidden)}
-        className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs transition-all duration-150
-          active:scale-90 focus:outline-none ${
-          allHidden
-            ? "bg-dark-600 text-dark-400"
-            : "bg-dark-700 text-dark-300 hover:bg-dark-600 hover:text-white hover:shadow-lg hover:-translate-y-0.5"
-        }`}
-        title={allHidden ? "Tüm Çizimleri Göster" : "Tüm Çizimleri Gizle"}
-      >
-        <span>{allHidden ? "👁️‍🗨️" : "👁️"}</span>
-      </button>
+        {/* Lock All Drawings */}
+        <button
+          onClick={() => onLockAllChange(!allLocked)}
+          className={`w-8 h-8 flex items-center justify-center rounded text-sm transition-all duration-150
+            active:scale-95 focus:outline-none ${
+            allLocked
+              ? "bg-amber-600 text-white"
+              : "bg-dark-700 text-dark-300 hover:bg-dark-600 hover:text-white"
+          }`}
+          title={allLocked ? "Kilidi Aç" : "Kilitle"}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            {allLocked ? (
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            ) : (
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+            )}
+          </svg>
+        </button>
+
+        {/* Hide All Drawings */}
+        <button
+          onClick={() => onHideAllChange(!allHidden)}
+          className={`w-8 h-8 flex items-center justify-center rounded text-sm transition-all duration-150
+            active:scale-95 focus:outline-none ${
+            allHidden
+              ? "bg-dark-600 text-dark-500"
+              : "bg-dark-700 text-dark-300 hover:bg-dark-600 hover:text-white"
+          }`}
+          title={allHidden ? "Göster" : "Gizle"}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            {allHidden ? (
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+            ) : (
+              <>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </>
+            )}
+          </svg>
+        </button>
+      </div>
 
       {/* Divider */}
       <div className="w-px h-5 bg-dark-600 mx-0.5" />
@@ -490,7 +516,7 @@ export function ChartToolbar({
 
         {/* Style Dropdown */}
         {showSettings && (
-          <div className="absolute top-full right-0 mt-1 bg-dark-800 border border-dark-600 rounded-lg shadow-xl z-50 p-3 min-w-[240px]">
+          <div className="absolute top-full right-0 mt-1 bg-dark-800 border border-dark-600 rounded-lg shadow-xl z-50 p-3 min-w-[240px] max-w-[calc(100vw-1rem)]">
             {/* Color Picker */}
             <div className="mb-3">
               <label className="text-xs text-dark-400 mb-1.5 block">Renk</label>
@@ -622,6 +648,23 @@ export function ChartToolbar({
               </div>
             </div>
 
+            {/* Text Input - Always Visible */}
+            <div className="mb-3">
+              <label className="text-xs text-dark-400 mb-1.5 block">Metin / Not</label>
+              <textarea
+                value={currentStyle.text || ""}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  onStyleChange({ text: e.target.value });
+                }}
+                onKeyDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                placeholder="Çizime not ekle..."
+                className="w-full px-2 py-1.5 bg-dark-700 border border-dark-600 rounded text-xs text-white placeholder-dark-500 outline-none focus:border-primary-500 resize-none"
+                rows={2}
+              />
+            </div>
+
             {/* Advanced Settings Toggle */}
             <button
               onClick={(e) => {
@@ -718,7 +761,7 @@ export function ChartToolbar({
                 </div>
 
                 {/* Font Size */}
-                <div className="mb-2">
+                <div className="mb-3">
                   <label className="text-xs text-dark-400 mb-1.5 flex items-center justify-between">
                     <span>Font Size</span>
                     <span className="text-dark-500">{currentStyle.fontSize || 12}px</span>
@@ -735,6 +778,7 @@ export function ChartToolbar({
                     className="w-full h-1.5 bg-dark-600 rounded-lg appearance-none cursor-pointer accent-primary-500"
                   />
                 </div>
+
               </div>
             )}
           </div>
@@ -745,15 +789,17 @@ export function ChartToolbar({
       {onToggleObjectTree && (
         <button
           onClick={onToggleObjectTree}
-          className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs transition-all duration-150
-            active:scale-90 focus:outline-none focus:ring-2 focus:ring-primary-500/50 ${
+          className={`w-8 h-8 flex items-center justify-center rounded text-sm transition-all duration-150
+            active:scale-95 focus:outline-none ${
             showObjectTree
-              ? "bg-gradient-to-b from-primary-500 to-primary-600 text-white shadow-md shadow-primary-500/30"
-              : "bg-dark-700 text-dark-300 hover:bg-dark-600 hover:text-white hover:shadow-lg hover:-translate-y-0.5"
+              ? "bg-primary-600 text-white"
+              : "bg-dark-700 text-dark-300 hover:bg-dark-600 hover:text-white"
           }`}
           title="Çizim Nesneleri"
         >
-          <span>📋</span>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+          </svg>
         </button>
       )}
 
@@ -776,6 +822,7 @@ export function ChartToolbar({
           </button>
         </div>
       )}
+      </div>
 
       {/* All Tools Modal */}
       {showAllToolsModal && (
@@ -783,7 +830,7 @@ export function ChartToolbar({
           onClose={() => setShowAllToolsModal(false)}
           activeTool={activeTool}
           onToolChange={(tool) => {
-            onToolChange(tool);
+            handleToolChangeWithCategory(tool);
             if (!stayInDrawingMode) {
               setShowAllToolsModal(false);
             }
@@ -834,8 +881,16 @@ export function ChartToolbar({
 }
 
 // ============================================
-// DRAWING OBJECT TREE COMPONENT
+// DRAWING OBJECT TREE COMPONENT WITH GROUPING
 // ============================================
+
+interface DrawingGroup {
+  id: string;
+  name: string;
+  color?: string;
+  visible: boolean;
+  collapsed: boolean;
+}
 
 interface DrawingObjectTreeProps {
   drawings: Array<{
@@ -844,149 +899,523 @@ interface DrawingObjectTreeProps {
     visible: boolean;
     locked: boolean;
     name?: string;
+    group_id?: string;
   }>;
+  groups: DrawingGroup[];
   selectedDrawingId: string | null;
   onSelectDrawing: (id: string | null) => void;
   onToggleVisibility: (id: string) => void;
   onToggleLock: (id: string) => void;
   onDeleteDrawing: (id: string) => void;
   onRenameDrawing: (id: string, name: string) => void;
+  onMoveToGroup: (drawingId: string, groupId: string | null) => void;
+  onCreateGroup: (name: string) => void;
+  onDeleteGroup: (groupId: string) => void;
+  onRenameGroup: (groupId: string, name: string) => void;
+  onToggleGroupVisibility: (groupId: string) => void;
+  onToggleGroupCollapse: (groupId: string) => void;
   onClose: () => void;
 }
 
 export function DrawingObjectTree({
   drawings,
+  groups,
   selectedDrawingId,
   onSelectDrawing,
   onToggleVisibility,
   onToggleLock,
   onDeleteDrawing,
   onRenameDrawing,
+  onMoveToGroup,
+  onCreateGroup,
+  onDeleteGroup,
+  onRenameGroup,
+  onToggleGroupVisibility,
+  onToggleGroupCollapse,
   onClose,
 }: DrawingObjectTreeProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [showNewGroupInput, setShowNewGroupInput] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [moveMenuOpenFor, setMoveMenuOpenFor] = useState<string | null>(null);
+
+  // Mouse-based drag state
+  const [isDragging, setIsDragging] = useState(false);
+  const [draggedDrawingId, setDraggedDrawingId] = useState<string | null>(null);
+  const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const groupRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  // Mouse move handler for dragging
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      setMousePos({ x: e.clientX, y: e.clientY });
+
+      // Check which group we're over
+      let foundGroup: string | null = null;
+      groupRefs.current.forEach((el, groupId) => {
+        const rect = el.getBoundingClientRect();
+        if (e.clientX >= rect.left && e.clientX <= rect.right &&
+            e.clientY >= rect.top && e.clientY <= rect.bottom) {
+          foundGroup = groupId;
+        }
+      });
+      setDragOverGroupId(foundGroup);
+    };
+
+    const handleMouseUp = () => {
+      if (draggedDrawingId && dragOverGroupId !== null) {
+        // Move to group (dragOverGroupId can be "ungrouped" for removing from group)
+        const targetGroup = dragOverGroupId === "ungrouped" ? null : dragOverGroupId;
+        onMoveToGroup(draggedDrawingId, targetGroup);
+      }
+      setIsDragging(false);
+      setDraggedDrawingId(null);
+      setDragOverGroupId(null);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDragging, draggedDrawingId, dragOverGroupId, onMoveToGroup]);
+
+  // Start dragging
+  const handleDragStart = (e: React.MouseEvent, drawingId: string) => {
+    e.preventDefault();
+    setIsDragging(true);
+    setDraggedDrawingId(drawingId);
+    setMousePos({ x: e.clientX, y: e.clientY });
+  };
+
+  // Get ungrouped drawings
+  const ungroupedDrawings = drawings.filter(d => !d.group_id);
+
+  // Get drawings by group
+  const getGroupDrawings = (groupId: string) => drawings.filter(d => d.group_id === groupId);
+
+  // Handle creating new group
+  const handleCreateGroup = () => {
+    if (newGroupName.trim()) {
+      onCreateGroup(newGroupName.trim());
+      setNewGroupName("");
+      setShowNewGroupInput(false);
+    }
+  };
+
+
+  // Render a single drawing item
+  const renderDrawingItem = (drawing: typeof drawings[0], inGroup: boolean = false) => {
+    const toolInfo = getToolInfo(drawing.drawing_type);
+    const isBeingDragged = isDragging && draggedDrawingId === drawing.id;
+
+    return (
+      <div
+        key={drawing.id}
+        onMouseDown={(e) => {
+          // Only start drag on left click and not on buttons
+          if (e.button === 0 && groups.length > 0) {
+            handleDragStart(e, drawing.id);
+          }
+        }}
+        className={`flex items-center gap-2 px-3 py-1.5 hover:bg-dark-700 ${
+          groups.length > 0 ? "cursor-grab" : "cursor-pointer"
+        } ${
+          selectedDrawingId === drawing.id ? "bg-primary-600/20" : ""
+        } ${inGroup ? "pl-6" : ""} ${isBeingDragged ? "opacity-50 bg-primary-600/30" : ""}`}
+        onClick={() => !isDragging && onSelectDrawing(drawing.id)}
+      >
+        {/* Icon */}
+        <span className="w-5 text-center text-xs">
+          {toolInfo?.icon || "?"}
+        </span>
+
+        {/* Name */}
+        {editingId === drawing.id ? (
+          <input
+            type="text"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            onBlur={() => {
+              onRenameDrawing(drawing.id, editName);
+              setEditingId(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                onRenameDrawing(drawing.id, editName);
+                setEditingId(null);
+              } else if (e.key === "Escape") {
+                setEditingId(null);
+              }
+            }}
+            className="flex-1 bg-dark-600 text-xs px-1 py-0.5 rounded text-white outline-none"
+            autoFocus
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <span
+            className="flex-1 text-xs text-dark-200 truncate"
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              setEditingId(drawing.id);
+              setEditName(drawing.name || toolInfo?.label || "Çizim");
+            }}
+          >
+            {drawing.name || toolInfo?.label || "Çizim"}
+          </span>
+        )}
+
+        {/* Actions */}
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleVisibility(drawing.id);
+            }}
+            className={`w-5 h-5 flex items-center justify-center rounded ${
+              drawing.visible ? "text-dark-300 hover:text-white" : "text-dark-500"
+            }`}
+            title={drawing.visible ? "Gizle" : "Göster"}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {drawing.visible ? (
+                <>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </>
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+              )}
+            </svg>
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleLock(drawing.id);
+            }}
+            className={`w-5 h-5 flex items-center justify-center rounded ${
+              drawing.locked ? "text-amber-400" : "text-dark-300 hover:text-white"
+            }`}
+            title={drawing.locked ? "Kilidi Aç" : "Kilitle"}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {drawing.locked ? (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+              )}
+            </svg>
+          </button>
+          {/* Move to Group Button */}
+          {groups.length > 0 && (
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMoveMenuOpenFor(moveMenuOpenFor === drawing.id ? null : drawing.id);
+                }}
+                className={`w-5 h-5 flex items-center justify-center rounded ${
+                  drawing.group_id ? "text-primary-400" : "text-dark-300 hover:text-white"
+                }`}
+                title="Gruba Taşı"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                </svg>
+              </button>
+              {/* Dropdown Menu */}
+              {moveMenuOpenFor === drawing.id && (
+                <div className="absolute right-0 top-6 w-40 bg-dark-700 border border-dark-600 rounded shadow-lg z-50">
+                  {/* Option to remove from group */}
+                  {drawing.group_id && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onMoveToGroup(drawing.id, null);
+                        setMoveMenuOpenFor(null);
+                      }}
+                      className="w-full px-3 py-1.5 text-left text-xs text-dark-300 hover:bg-dark-600 hover:text-white"
+                    >
+                      ✕ Gruptan Çıkar
+                    </button>
+                  )}
+                  {/* List of groups */}
+                  {groups.map(group => (
+                    <button
+                      key={group.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onMoveToGroup(drawing.id, group.id);
+                        setMoveMenuOpenFor(null);
+                      }}
+                      className={`w-full px-3 py-1.5 text-left text-xs hover:bg-dark-600 flex items-center gap-2 ${
+                        drawing.group_id === group.id ? "text-primary-400" : "text-dark-300 hover:text-white"
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded" style={{ backgroundColor: group.color || "#6366f1" }} />
+                      {group.name}
+                      {drawing.group_id === group.id && " ✓"}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeleteDrawing(drawing.id);
+            }}
+            className="w-5 h-5 flex items-center justify-center rounded text-dark-300 hover:text-danger-400"
+            title="Sil"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <div className="absolute top-12 right-2 w-64 bg-dark-800 border border-dark-600 rounded-lg shadow-xl z-50">
+    <div className="absolute top-12 right-2 w-72 bg-dark-800 border border-dark-600 rounded-lg shadow-xl z-50">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-dark-600">
-        <span className="text-sm font-medium text-white">Drawings ({drawings.length})</span>
-        <button
-          onClick={onClose}
-          className="text-dark-400 hover:text-white"
-        >
-          ✕
-        </button>
+        <span className="text-sm font-medium text-white">Çizimler ({drawings.length})</span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setShowNewGroupInput(true)}
+            className="p-1 text-dark-400 hover:text-white hover:bg-dark-700 rounded"
+            title="Yeni Grup Oluştur"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+          </button>
+          <button
+            onClick={onClose}
+            className="p-1 text-dark-400 hover:text-white hover:bg-dark-700 rounded"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
       </div>
 
-      {/* Drawing List */}
-      <div className="max-h-80 overflow-y-auto">
-        {drawings.length === 0 ? (
+      {/* New Group Input */}
+      {showNewGroupInput && (
+        <div className="px-3 py-2 border-b border-dark-600 flex gap-2">
+          <input
+            type="text"
+            value={newGroupName}
+            onChange={(e) => setNewGroupName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleCreateGroup();
+              if (e.key === "Escape") {
+                setShowNewGroupInput(false);
+                setNewGroupName("");
+              }
+            }}
+            placeholder="Grup adı..."
+            className="flex-1 bg-dark-700 text-xs px-2 py-1.5 rounded text-white outline-none focus:ring-1 focus:ring-primary-500"
+            autoFocus
+          />
+          <button
+            onClick={handleCreateGroup}
+            className="px-2 py-1 bg-primary-600 text-white text-xs rounded hover:bg-primary-500"
+          >
+            Ekle
+          </button>
+        </div>
+      )}
+
+      {/* Drawing List with Groups */}
+      <div className="max-h-96 overflow-y-auto">
+        {drawings.length === 0 && groups.length === 0 ? (
           <div className="px-3 py-4 text-xs text-dark-400 text-center">
-            No drawings yet
+            Henüz çizim yok
           </div>
         ) : (
-          drawings.map((drawing) => {
-            const toolInfo = getToolInfo(drawing.drawing_type);
-            return (
-              <div
-                key={drawing.id}
-                className={`flex items-center gap-2 px-3 py-1.5 hover:bg-dark-700 cursor-pointer ${
-                  selectedDrawingId === drawing.id ? "bg-primary-600/20" : ""
-                }`}
-                onClick={() => onSelectDrawing(drawing.id)}
-              >
-                {/* Icon */}
-                <span className="w-5 text-center text-xs">
-                  {toolInfo?.icon || "?"}
-                </span>
-
-                {/* Name */}
-                {editingId === drawing.id ? (
-                  <input
-                    type="text"
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    onBlur={() => {
-                      onRenameDrawing(drawing.id, editName);
-                      setEditingId(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        onRenameDrawing(drawing.id, editName);
-                        setEditingId(null);
-                      } else if (e.key === "Escape") {
-                        setEditingId(null);
-                      }
-                    }}
-                    className="flex-1 bg-dark-600 text-xs px-1 py-0.5 rounded text-white outline-none"
-                    autoFocus
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                ) : (
-                  <span
-                    className="flex-1 text-xs text-dark-200 truncate"
-                    onDoubleClick={(e) => {
-                      e.stopPropagation();
-                      setEditingId(drawing.id);
-                      setEditName(drawing.name || toolInfo?.label || "Drawing");
-                    }}
-                  >
-                    {drawing.name || toolInfo?.label || "Drawing"}
-                  </span>
-                )}
-
-                {/* Actions */}
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleVisibility(drawing.id);
-                    }}
-                    className={`w-5 h-5 flex items-center justify-center rounded text-[10px] ${
-                      drawing.visible ? "text-dark-300" : "text-dark-500"
-                    }`}
-                    title={drawing.visible ? "Gizle" : "Göster"}
-                  >
-                    {drawing.visible ? "👁️" : "👁️‍🗨️"}
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleLock(drawing.id);
-                    }}
-                    className={`w-5 h-5 flex items-center justify-center rounded ${
-                      drawing.locked ? "text-amber-400" : "text-dark-300 hover:text-dark-200"
-                    }`}
-                    title={drawing.locked ? "Kilidi Aç" : "Kilitle"}
-                  >
-                    {drawing.locked ? (
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          <>
+            {/* Groups */}
+            {groups.map((group) => {
+              const groupDrawings = getGroupDrawings(group.id);
+              const isDragOver = isDragging && dragOverGroupId === group.id;
+              return (
+                <div
+                  key={group.id}
+                  ref={(el) => {
+                    if (el) groupRefs.current.set(group.id, el);
+                    else groupRefs.current.delete(group.id);
+                  }}
+                  className={`transition-all duration-150 ${
+                    isDragOver
+                      ? "bg-primary-600/30 ring-2 ring-primary-500 ring-inset"
+                      : isDragging
+                        ? "bg-primary-600/10 ring-1 ring-primary-500/30 ring-inset"
+                        : ""
+                  }`}
+                >
+                  {/* Group Header */}
+                  <div className={`flex items-center gap-2 px-3 py-2 border-b border-dark-600 transition-colors ${
+                    isDragOver
+                      ? "bg-primary-600 text-white"
+                      : isDragging
+                        ? "bg-primary-700/50 text-white"
+                        : "bg-dark-750 hover:bg-dark-700"
+                  }`}>
+                    <button
+                      onClick={() => onToggleGroupCollapse(group.id)}
+                      className="text-dark-400 hover:text-white"
+                    >
+                      <svg className={`w-3 h-3 transition-transform ${group.collapsed ? "" : "rotate-90"}`} fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
                       </svg>
+                    </button>
+
+                    <span
+                      className="w-3 h-3 rounded"
+                      style={{ backgroundColor: group.color || "#6366f1" }}
+                    />
+
+                    {editingGroupId === group.id ? (
+                      <input
+                        type="text"
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        onBlur={() => {
+                          onRenameGroup(group.id, editName);
+                          setEditingGroupId(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            onRenameGroup(group.id, editName);
+                            setEditingGroupId(null);
+                          } else if (e.key === "Escape") {
+                            setEditingGroupId(null);
+                          }
+                        }}
+                        className="flex-1 bg-dark-600 text-xs px-1 py-0.5 rounded text-white outline-none"
+                        autoFocus
+                        onClick={(e) => e.stopPropagation()}
+                      />
                     ) : (
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
-                      </svg>
+                      <span
+                        className="flex-1 text-xs text-dark-200 font-medium cursor-pointer"
+                        onDoubleClick={() => {
+                          setEditingGroupId(group.id);
+                          setEditName(group.name);
+                        }}
+                      >
+                        {group.name} ({groupDrawings.length})
+                      </span>
                     )}
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteDrawing(drawing.id);
-                    }}
-                    className="w-5 h-5 flex items-center justify-center rounded text-[10px] text-dark-300 hover:text-danger-400"
-                    title="Sil"
-                  >
-                    🗑
-                  </button>
+
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        onClick={() => onToggleGroupVisibility(group.id)}
+                        className={`w-5 h-5 flex items-center justify-center rounded ${
+                          group.visible ? "text-dark-300 hover:text-white" : "text-dark-500"
+                        }`}
+                        title={group.visible ? "Grubu Gizle" : "Grubu Göster"}
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          {group.visible ? (
+                            <>
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </>
+                          ) : (
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M3 3l18 18" />
+                          )}
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => onDeleteGroup(group.id)}
+                        className="w-5 h-5 flex items-center justify-center rounded text-dark-300 hover:text-danger-400"
+                        title="Grubu Sil"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Group Drawings */}
+                  {!group.collapsed && groupDrawings.map((drawing) => renderDrawingItem(drawing, true))}
                 </div>
+              );
+            })}
+
+            {/* Ungrouped Drawings */}
+            {(ungroupedDrawings.length > 0 || groups.length > 0) && (
+              <div
+                ref={(el) => {
+                  if (el) groupRefs.current.set("ungrouped", el);
+                  else groupRefs.current.delete("ungrouped");
+                }}
+                className={`transition-colors ${
+                  isDragging && dragOverGroupId === "ungrouped"
+                    ? "bg-dark-600/50"
+                    : isDragging
+                      ? "bg-dark-700/30"
+                      : ""
+                }`}
+              >
+                {groups.length > 0 && (
+                  <div className={`px-3 py-1.5 border-b border-dark-600 transition-colors ${
+                    isDragging && dragOverGroupId === "ungrouped" ? "bg-dark-600" : "bg-dark-750"
+                  }`}>
+                    <span className="text-xs text-dark-400">Grupsuz ({ungroupedDrawings.length})</span>
+                  </div>
+                )}
+                {ungroupedDrawings.map((drawing) => renderDrawingItem(drawing))}
               </div>
-            );
-          })
+            )}
+          </>
         )}
       </div>
+
+      {/* Footer hint */}
+      <div className="px-3 py-1.5 border-t border-dark-600 text-[10px] text-dark-500">
+        {groups.length > 0
+          ? "Sürükle-bırak ile gruplara taşı"
+          : "Grup oluşturmak için + butonuna tıklayın"
+        }
+      </div>
+
+      {/* Drag indicator */}
+      {isDragging && draggedDrawingId && (
+        <div
+          className="fixed pointer-events-none z-[100] bg-dark-700 border border-primary-500 rounded px-2 py-1 text-xs text-white shadow-lg"
+          style={{
+            left: mousePos.x + 10,
+            top: mousePos.y + 10,
+          }}
+        >
+          {(() => {
+            const drawing = drawings.find(d => d.id === draggedDrawingId);
+            const toolInfo = drawing ? getToolInfo(drawing.drawing_type) : null;
+            return (
+              <span className="flex items-center gap-1">
+                <span>{toolInfo?.icon || "?"}</span>
+                <span>{drawing?.name || toolInfo?.label || "Çizim"}</span>
+              </span>
+            );
+          })()}
+        </div>
+      )}
     </div>
   );
 }
@@ -1019,6 +1448,43 @@ export function DrawingSettingsPanel({
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<"style" | "coordinates" | "visibility" | "levels">("style");
 
+  // Draggable modal state
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStart = useRef({ x: 0, y: 0 });
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Handle drag start
+  const handleDragStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+    dragStart.current = { x: e.clientX - position.x, y: e.clientY - position.y };
+  };
+
+  // Handle drag move
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      setPosition({
+        x: e.clientX - dragStart.current.x,
+        y: e.clientY - dragStart.current.y,
+      });
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDragging]);
+
   // Safety checks
   if (!drawing || !drawing.drawing_type) {
     return null;
@@ -1028,12 +1494,19 @@ export function DrawingSettingsPanel({
   const drawingStyle = drawing.style || {};
 
   const isFibonacci = drawing.drawing_type.startsWith("fib_");
+  const isPitchfork = ["pitchfork", "schiff_pitchfork", "modified_schiff", "inside_pitchfork"].includes(drawing.drawing_type);
   const isPosition = drawing.drawing_type === "long_position" || drawing.drawing_type === "short_position";
   const isLine = ["trendline", "ray", "extended", "horizontal", "vertical", "horizontal_ray", "info_line", "trend_angle", "arrow"].includes(drawing.drawing_type);
+  const isAnchoredVwap = drawing.drawing_type === "anchored_vwap";
+  const isParallelChannel = drawing.drawing_type === "parallel_channel";
 
   // Get Fibonacci levels from style or use defaults
   const fibLevels = drawingStyle.fibLevels || FIBONACCI_LEVELS.slice(0, 7);
   const fibColors = drawingStyle.fibColors || FIBONACCI_COLORS.slice(0, 7);
+
+  // Get Pitchfork levels from style or use defaults
+  const pitchforkLevels = drawingStyle.pitchforkLevels || [0.25, 0.5, 0.75];
+  const pitchforkColors = drawingStyle.pitchforkColors || ["#787B86", "#2962FF", "#787B86"];
 
   const formatDateTime = (timestamp: number) => {
     const date = new Date(timestamp);
@@ -1045,18 +1518,33 @@ export function DrawingSettingsPanel({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/30 z-[100]" onClick={onClose}>
       <div
-        className="bg-dark-800 border border-dark-600 rounded-lg shadow-2xl w-[400px] max-h-[80vh] overflow-hidden"
+        ref={modalRef}
+        className="absolute bg-dark-800 border border-dark-600 rounded-lg shadow-2xl w-[400px] max-h-[80vh] overflow-hidden"
+        style={{
+          left: `calc(50% + ${position.x}px)`,
+          top: `calc(50% + ${position.y}px)`,
+          transform: "translate(-50%, -50%)",
+        }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-dark-600 bg-dark-700">
+        {/* Header - Draggable */}
+        <div
+          className="flex items-center justify-between px-4 py-3 border-b border-dark-600 bg-dark-700 cursor-move select-none"
+          onMouseDown={handleDragStart}
+        >
           <div className="flex items-center gap-2">
             <span className="text-lg">{toolInfo?.icon}</span>
             <span className="text-sm font-medium text-white">{toolInfo?.label || "Çizim"} Ayarları</span>
           </div>
-          <button onClick={onClose} className="text-dark-400 hover:text-white text-xl">×</button>
+          <button
+            onClick={onClose}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="text-dark-400 hover:text-white text-xl"
+          >
+            ×
+          </button>
         </div>
 
         {/* Tabs */}
@@ -1081,7 +1569,7 @@ export function DrawingSettingsPanel({
           >
             Koordinat
           </button>
-          {isFibonacci && (
+          {(isFibonacci || isPitchfork || isAnchoredVwap || isParallelChannel) && (
             <button
               onClick={() => setActiveTab("levels")}
               className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
@@ -1274,19 +1762,17 @@ export function DrawingSettingsPanel({
                 </div>
               </div>
 
-              {/* Text Input (for text tools) */}
-              {["text", "anchored_text", "note", "callout"].includes(drawing.drawing_type) && (
-                <div>
-                  <label className="text-xs text-dark-400 mb-2 block">Metin</label>
-                  <textarea
-                    value={drawingStyle.text || ""}
-                    onChange={(e) => onUpdateStyle({ text: e.target.value })}
-                    className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded text-sm text-white resize-none"
-                    rows={3}
-                    placeholder="Metin girin..."
-                  />
-                </div>
-              )}
+              {/* Text / Note Input - Always Visible */}
+              <div>
+                <label className="text-xs text-dark-400 mb-2 block">Metin / Not</label>
+                <textarea
+                  value={drawingStyle.text || ""}
+                  onChange={(e) => onUpdateStyle({ text: e.target.value })}
+                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded text-sm text-white resize-none focus:border-primary-500 outline-none"
+                  rows={2}
+                  placeholder="Çizime not ekleyebilirsiniz..."
+                />
+              </div>
 
               {/* Font Size */}
               <div>
@@ -1601,6 +2087,298 @@ export function DrawingSettingsPanel({
                   />
                   {t("drawingTools.settings.extendRight")}
                 </label>
+              </div>
+            </div>
+          )}
+
+          {/* Pitchfork Levels Tab */}
+          {activeTab === "levels" && isPitchfork && (
+            <div className="space-y-3">
+              <div className="text-xs text-dark-400 mb-2">Pitchfork Seviye Ayarları</div>
+
+              {/* Median Line Settings */}
+              <div className="p-3 bg-dark-700 rounded-lg space-y-2">
+                <div className="text-xs text-white font-medium mb-2">Median Çizgisi</div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-dark-300">Göster</span>
+                  <button
+                    onClick={() => onUpdateStyle({ showMedian: !(drawingStyle.showMedian !== false) })}
+                    className={`w-10 h-5 rounded-full transition-colors relative ${
+                      drawingStyle.showMedian !== false ? "bg-primary-500" : "bg-dark-600"
+                    }`}
+                  >
+                    <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                      drawingStyle.showMedian !== false ? "left-5" : "left-0.5"
+                    }`} />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-dark-300">Renk</span>
+                  <input
+                    type="color"
+                    value={drawingStyle.medianColor || "#FF9800"}
+                    onChange={(e) => onUpdateStyle({ medianColor: e.target.value })}
+                    className="w-8 h-6 rounded cursor-pointer bg-transparent border-0"
+                  />
+                </div>
+              </div>
+
+              {/* Level Lines Settings */}
+              <div className="p-3 bg-dark-700 rounded-lg space-y-2">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-white font-medium">Seviye Çizgileri</span>
+                  <button
+                    onClick={() => onUpdateStyle({ showPitchforkLevels: !(drawingStyle.showPitchforkLevels !== false) })}
+                    className={`w-10 h-5 rounded-full transition-colors relative ${
+                      drawingStyle.showPitchforkLevels !== false ? "bg-primary-500" : "bg-dark-600"
+                    }`}
+                  >
+                    <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                      drawingStyle.showPitchforkLevels !== false ? "left-5" : "left-0.5"
+                    }`} />
+                  </button>
+                </div>
+
+                {pitchforkLevels.map((level, index) => (
+                  <div key={index} className="flex items-center gap-2 p-2 bg-dark-600 rounded">
+                    <input
+                      type="number"
+                      step="0.05"
+                      min="0"
+                      max="2"
+                      value={level}
+                      onChange={(e) => {
+                        const newValue = parseFloat(e.target.value);
+                        if (!isNaN(newValue)) {
+                          const newLevels = [...pitchforkLevels];
+                          newLevels[index] = newValue;
+                          onUpdateStyle({ pitchforkLevels: newLevels.sort((a, b) => a - b) });
+                        }
+                      }}
+                      className="w-16 px-1.5 py-0.5 bg-dark-700 border border-dark-500 rounded text-xs text-white text-center"
+                    />
+                    <span className="text-xs text-dark-400">{Math.round(level * 100)}%</span>
+                    <input
+                      type="color"
+                      value={pitchforkColors[index] || "#787B86"}
+                      onChange={(e) => {
+                        const newColors = [...pitchforkColors];
+                        newColors[index] = e.target.value;
+                        onUpdateStyle({ pitchforkColors: newColors });
+                      }}
+                      className="w-6 h-6 rounded cursor-pointer bg-transparent border-0"
+                    />
+                    <button
+                      onClick={() => {
+                        const newLevels = pitchforkLevels.filter((_, i) => i !== index);
+                        const newColors = pitchforkColors.filter((_, i) => i !== index);
+                        onUpdateStyle({ pitchforkLevels: newLevels, pitchforkColors: newColors });
+                      }}
+                      className="text-dark-500 hover:text-danger-400 transition-colors ml-auto"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+
+                {/* Add Level Button */}
+                <button
+                  onClick={() => {
+                    let newLevel = 0.5;
+                    while (pitchforkLevels.includes(newLevel)) {
+                      newLevel = Math.round((newLevel + 0.25) * 100) / 100;
+                    }
+                    const newLevels = [...pitchforkLevels, newLevel].sort((a, b) => a - b);
+                    const newColors = [...pitchforkColors, "#787B86"];
+                    onUpdateStyle({ pitchforkLevels: newLevels, pitchforkColors: newColors });
+                  }}
+                  className="w-full py-1.5 text-xs text-primary-400 hover:text-primary-300 bg-dark-700 hover:bg-dark-600 rounded transition-colors flex items-center justify-center gap-1"
+                >
+                  <span>+</span> Seviye Ekle
+                </button>
+
+                {/* Preset Levels */}
+                <div className="pt-2 border-t border-dark-500">
+                  <div className="text-[10px] text-dark-500 mb-1">Hızlı Ekle</div>
+                  <div className="flex flex-wrap gap-1">
+                    {[0.25, 0.5, 0.75, 1.25, 1.5, 1.75, 2].map(preset => (
+                      <button
+                        key={preset}
+                        onClick={() => {
+                          if (!pitchforkLevels.includes(preset)) {
+                            const newLevels = [...pitchforkLevels, preset].sort((a, b) => a - b);
+                            const newColors = [...pitchforkColors, "#787B86"];
+                            onUpdateStyle({ pitchforkLevels: newLevels, pitchforkColors: newColors });
+                          }
+                        }}
+                        disabled={pitchforkLevels.includes(preset)}
+                        className={`px-2 py-0.5 text-[10px] rounded transition-colors ${
+                          pitchforkLevels.includes(preset)
+                            ? "bg-primary-600/30 text-primary-400"
+                            : "bg-dark-700 text-dark-300 hover:bg-primary-600/30 hover:text-primary-400"
+                        }`}
+                      >
+                        {Math.round(preset * 100)}%
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Show Labels */}
+              <div className="flex items-center justify-between p-3 bg-dark-700 rounded-lg">
+                <span className="text-xs text-dark-300">Etiketleri Göster</span>
+                <button
+                  onClick={() => onUpdateStyle({ showLabels: !(drawingStyle.showLabels !== false) })}
+                  className={`w-10 h-5 rounded-full transition-colors relative ${
+                    drawingStyle.showLabels !== false ? "bg-primary-500" : "bg-dark-600"
+                  }`}
+                >
+                  <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                    drawingStyle.showLabels !== false ? "left-5" : "left-0.5"
+                  }`} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Anchored VWAP Settings Tab */}
+          {activeTab === "levels" && isAnchoredVwap && (
+            <div className="space-y-3">
+              <div className="text-xs text-dark-400 mb-2">VWAP Ayarları</div>
+
+              {/* Source Selection */}
+              <div className="p-3 bg-dark-700 rounded-lg">
+                <div className="text-xs text-white font-medium mb-2">Kaynak</div>
+                <div className="grid grid-cols-4 gap-1">
+                  {[
+                    { id: "hlc3", label: "HLC3" },
+                    { id: "hl2", label: "HL2" },
+                    { id: "ohlc4", label: "OHLC4" },
+                    { id: "close", label: "Close" },
+                  ].map((src) => (
+                    <button
+                      key={src.id}
+                      onClick={() => onUpdateStyle({ vwapSource: src.id as "hlc3" | "hl2" | "ohlc4" | "close" })}
+                      className={`px-2 py-1.5 text-[10px] rounded transition-colors ${
+                        (drawingStyle.vwapSource || "hlc3") === src.id
+                          ? "bg-primary-600 text-white"
+                          : "bg-dark-600 text-dark-300 hover:bg-dark-500"
+                      }`}
+                    >
+                      {src.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Band Settings */}
+              <div className="p-3 bg-dark-700 rounded-lg space-y-2">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-white font-medium">Standart Sapma Bantları</span>
+                  <button
+                    onClick={() => onUpdateStyle({ showVwapBands: !(drawingStyle.showVwapBands || false) })}
+                    className={`w-10 h-5 rounded-full transition-colors relative ${
+                      drawingStyle.showVwapBands ? "bg-primary-500" : "bg-dark-600"
+                    }`}
+                  >
+                    <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                      drawingStyle.showVwapBands ? "left-5" : "left-0.5"
+                    }`} />
+                  </button>
+                </div>
+
+                {(drawingStyle.vwapBands || [1, 2, 3]).map((mult, index) => (
+                  <div key={index} className="flex items-center gap-2 p-2 bg-dark-600 rounded">
+                    <span className="text-xs text-dark-300 w-8">{mult}σ</span>
+                    <input
+                      type="color"
+                      value={(drawingStyle.vwapBandColors || ["#2962FF40", "#2962FF25", "#2962FF15"])[index] || "#2962FF40"}
+                      onChange={(e) => {
+                        const newColors = [...(drawingStyle.vwapBandColors || ["#2962FF40", "#2962FF25", "#2962FF15"])];
+                        newColors[index] = e.target.value;
+                        onUpdateStyle({ vwapBandColors: newColors });
+                      }}
+                      className="w-8 h-6 rounded cursor-pointer bg-transparent border-0"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Parallel Channel Settings Tab */}
+          {activeTab === "levels" && isParallelChannel && (
+            <div className="space-y-3">
+              <div className="text-xs text-dark-400 mb-2">Kanal Ayarları</div>
+
+              {/* Middle Line */}
+              <div className="flex items-center justify-between p-3 bg-dark-700 rounded-lg">
+                <span className="text-xs text-dark-300">Orta Çizgiyi Göster</span>
+                <button
+                  onClick={() => onUpdateStyle({ showMiddleLine: !(drawingStyle.showMiddleLine || false) })}
+                  className={`w-10 h-5 rounded-full transition-colors relative ${
+                    drawingStyle.showMiddleLine ? "bg-primary-500" : "bg-dark-600"
+                  }`}
+                >
+                  <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                    drawingStyle.showMiddleLine ? "left-5" : "left-0.5"
+                  }`} />
+                </button>
+              </div>
+
+              {/* Channel Levels */}
+              <div className="p-3 bg-dark-700 rounded-lg space-y-2">
+                <div className="text-xs text-white font-medium mb-2">Ara Seviyeler</div>
+                <div className="flex flex-wrap gap-1">
+                  {[0.25, 0.5, 0.75].map(level => {
+                    const currentLevels = drawingStyle.channelLevels || [];
+                    const isActive = currentLevels.includes(level);
+                    return (
+                      <button
+                        key={level}
+                        onClick={() => {
+                          const newLevels = isActive
+                            ? currentLevels.filter(l => l !== level)
+                            : [...currentLevels, level].sort((a, b) => a - b);
+                          onUpdateStyle({ channelLevels: newLevels });
+                        }}
+                        className={`px-3 py-1.5 text-xs rounded transition-colors ${
+                          isActive
+                            ? "bg-primary-600 text-white"
+                            : "bg-dark-600 text-dark-300 hover:bg-dark-500"
+                        }`}
+                      >
+                        {Math.round(level * 100)}%
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Extend Options */}
+              <div className="p-3 bg-dark-700 rounded-lg space-y-2">
+                <div className="text-xs text-white font-medium mb-2">Uzatma</div>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 text-xs text-dark-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={drawingStyle.extendLeft || false}
+                      onChange={(e) => onUpdateStyle({ extendLeft: e.target.checked })}
+                      className="w-4 h-4 rounded bg-dark-600 border-dark-500 text-primary-500"
+                    />
+                    Sola
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-dark-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={drawingStyle.extendRight || false}
+                      onChange={(e) => onUpdateStyle({ extendRight: e.target.checked })}
+                      className="w-4 h-4 rounded bg-dark-600 border-dark-500 text-primary-500"
+                    />
+                    Sağa
+                  </label>
+                </div>
               </div>
             </div>
           )}
@@ -2460,7 +3238,7 @@ export function DrawingQuickToolbar({
 
         {/* Extended color picker dropdown */}
         {showMoreColors && (
-          <div className="absolute top-full left-0 mt-1 p-2 bg-dark-800 border border-dark-600 rounded-lg shadow-xl z-50">
+          <div className="absolute top-full left-0 mt-1 p-2 bg-dark-800 border border-dark-600 rounded-lg shadow-xl z-50 max-w-[calc(100vw-1rem)]">
             <div className="grid grid-cols-6 gap-1 mb-2">
               {PRESET_COLORS.map((color) => (
                 <button

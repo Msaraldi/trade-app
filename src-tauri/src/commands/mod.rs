@@ -8,7 +8,7 @@ use crate::models::{RiskCalculation, UserSettings};
 use crate::modules::risk_calculator::RiskCalculator;
 use crate::i18n::{Language, t, current_language};
 use crate::exchange::bybit::{BybitClient, WalletBalance, TickerInfo, InstrumentInfo, Kline, MarketCategory, AllInstruments};
-use crate::db::{self, Drawing};
+use crate::db::{self, Drawing, DrawingGroup};
 
 // Global exchange client
 static EXCHANGE_CLIENT: OnceLock<RwLock<Option<BybitClient>>> = OnceLock::new();
@@ -415,6 +415,10 @@ pub struct SaveDrawingRequest {
     pub visible: Option<bool>,
     #[serde(default)]
     pub locked: Option<bool>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub group_id: Option<String>,
 }
 
 /// Save or update a drawing
@@ -431,6 +435,8 @@ pub async fn save_drawing(request: SaveDrawingRequest) -> Result<Drawing, String
         locked: request.locked.unwrap_or(false),
         created_at: 0, // Will be set by db
         updated_at: 0, // Will be set by db
+        name: request.name,
+        group_id: request.group_id,
     };
 
     db::save_drawing(drawing).await
@@ -458,4 +464,86 @@ pub async fn clear_drawings(symbol: String, interval: String) -> Result<u64, Str
 #[tauri::command]
 pub async fn get_all_drawings_for_symbol(symbol: String) -> Result<Vec<Drawing>, String> {
     db::get_all_drawings_for_symbol(&symbol).await
+}
+
+// ==================== Drawing Group Commands ====================
+
+/// Create drawing group request
+#[derive(Debug, Deserialize)]
+pub struct CreateDrawingGroupRequest {
+    pub id: String,
+    pub name: String,
+    pub symbol: String,
+    #[serde(default)]
+    pub color: Option<String>,
+}
+
+/// Create a new drawing group
+#[tauri::command]
+pub async fn create_drawing_group(request: CreateDrawingGroupRequest) -> Result<DrawingGroup, String> {
+    let group = DrawingGroup {
+        id: request.id,
+        name: request.name,
+        symbol: request.symbol,
+        color: request.color,
+        visible: true,
+        collapsed: false,
+        created_at: 0, // Will be set by db
+    };
+
+    db::create_drawing_group(group).await
+}
+
+/// Get all drawing groups for a symbol
+#[tauri::command]
+pub async fn get_drawing_groups(symbol: String) -> Result<Vec<DrawingGroup>, String> {
+    db::get_drawing_groups(&symbol).await
+}
+
+/// Update drawing group request
+#[derive(Debug, Deserialize)]
+pub struct UpdateDrawingGroupRequest {
+    pub id: String,
+    pub name: String,
+    pub symbol: String,
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(default)]
+    pub visible: Option<bool>,
+    #[serde(default)]
+    pub collapsed: Option<bool>,
+}
+
+/// Update a drawing group
+#[tauri::command]
+pub async fn update_drawing_group(request: UpdateDrawingGroupRequest) -> Result<DrawingGroup, String> {
+    let group = DrawingGroup {
+        id: request.id,
+        name: request.name,
+        symbol: request.symbol,
+        color: request.color,
+        visible: request.visible.unwrap_or(true),
+        collapsed: request.collapsed.unwrap_or(false),
+        created_at: 0, // Not used in update
+    };
+
+    db::update_drawing_group(group).await
+}
+
+/// Delete a drawing group
+#[tauri::command]
+pub async fn delete_drawing_group(id: String) -> Result<bool, String> {
+    db::delete_drawing_group(&id).await
+}
+
+/// Toggle visibility for all drawings in a group
+#[tauri::command]
+pub async fn toggle_group_visibility(group_id: String, visible: bool) -> Result<(), String> {
+    db::toggle_group_visibility(&group_id, visible).await
+}
+
+/// Move a drawing to a group
+#[tauri::command]
+pub async fn move_drawing_to_group(drawing_id: String, group_id: Option<String>) -> Result<(), String> {
+    db::move_drawing_to_group(&drawing_id, group_id.as_deref()).await
 }

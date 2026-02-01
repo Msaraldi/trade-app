@@ -21,6 +21,9 @@ use commands::{
     save_api_credentials, test_api_connection,
     // Drawing commands
     save_drawing, get_drawings, delete_drawing, clear_drawings, get_all_drawings_for_symbol,
+    // Drawing group commands
+    create_drawing_group, get_drawing_groups, update_drawing_group, delete_drawing_group,
+    toggle_group_visibility, move_drawing_to_group,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -66,6 +69,13 @@ pub fn run() {
             delete_drawing,
             clear_drawings,
             get_all_drawings_for_symbol,
+            // Drawing group commands
+            create_drawing_group,
+            get_drawing_groups,
+            update_drawing_group,
+            delete_drawing_group,
+            toggle_group_visibility,
+            move_drawing_to_group,
         ])
         .run(tauri::generate_context!())
         .expect("AlgoTrade OS başlatılırken hata oluştu");

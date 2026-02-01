@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ChartToolbar, DrawingObjectTree, DrawingSettingsPanel, DrawingContextMenu, DrawingQuickToolbar } from "./ChartToolbar";
 import { getToolInfo } from "./ChartDrawings";
-import { Drawing, DrawingTool, DrawingStyle, DrawingPoint, getRequiredPoints } from "./ChartDrawings";
+import { Drawing, DrawingTool, DrawingStyle, DrawingPoint, getRequiredPoints, DEFAULT_DRAWING_STYLE } from "./ChartDrawings";
 import { VwapConfig, VwapData, calculateAllVwaps } from "./VwapSettings";
 import { SmaConfig, SmaData, calculateAllSmas } from "./SmaSettings";
 import { AnchoredVwapConfig, AnchoredVwapData, calculateAllAnchoredVwaps } from "./AnchoredVwapSettings";
@@ -59,9 +59,10 @@ type MagnetMode = "none" | "weak" | "strong";
 
 const CANDLE_WIDTH_RATIO = 0.7;
 const MIN_CANDLES = 20;  // Prevent too much zoom in (freezing)
-const MAX_CANDLES = 300; // Prevent too much zoom out (performance)
+const MAX_CANDLES = 500; // Prevent too much zoom out (performance)
+const FUTURE_SPACE = 150; // Allow scrolling 150 candles into the future
 const PADDING_TOP = 20;
-const PADDING_BOTTOM = 50;
+const PADDING_BOTTOM = 70; // More space for X-axis labels
 const PADDING_RIGHT = 80;
 const PADDING_LEFT = 10;
 const SELECTION_THRESHOLD = 10; // pixels
@@ -432,6 +433,9 @@ export function CustomChart({
   void _height; // Reserved for future use
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const canvasWrapperRef = useRef<HTMLDivElement>(null);
+  const lastWheelTime = useRef<number>(0);
+  const wheelRAF = useRef<number | null>(null);
 
   const [klines, setKlines] = useState<Kline[]>([]);
   const [loading, setLoading] = useState(true);
@@ -461,10 +465,15 @@ export function CustomChart({
   // Drawing state
   const [activeTool, setActiveTool] = useState<DrawingTool>("none");
   const [drawings, setDrawings] = useState<Drawing[]>([]);
+  const [drawingGroups, setDrawingGroups] = useState<Array<{
+    id: string;
+    name: string;
+    color?: string;
+    visible: boolean;
+    collapsed: boolean;
+  }>>([]);
   const [currentStyle, setCurrentStyle] = useState<DrawingStyle>({
-    color: "#2962FF",
-    lineWidth: 2,
-    lineStyle: "solid",
+    ...DEFAULT_DRAWING_STYLE,
   });
   const [pendingPoints, setPendingPoints] = useState<{ time: number; price: number }[]>([]);
   const [magnetMode, setMagnetMode] = useState<MagnetMode>("weak");
@@ -611,10 +620,13 @@ export function CustomChart({
       setKlines(sorted);
 
       if (sorted.length > 0) {
-        const endIdx = sorted.length;
-        const startIdx = Math.max(0, endIdx - 100);
+        // Show 100 candles with 20% future space on the right
+        const visibleCount = 100;
+        const futureOffset = Math.floor(visibleCount * 0.2); // 20 candles of future space
+        const endIdx = sorted.length + futureOffset;
+        const startIdx = endIdx - visibleCount;
 
-        const visibleKlines = sorted.slice(startIdx, endIdx);
+        const visibleKlines = sorted.slice(Math.max(0, startIdx), sorted.length);
         const prices = visibleKlines.flatMap(k => [k.high, k.low]);
         const min = Math.min(...prices);
         const max = Math.max(...prices);
@@ -648,6 +660,22 @@ export function CustomChart({
       setDrawings(parsed);
     } catch (e) {
       console.error("Failed to load drawings:", e);
+    }
+  }, [symbol]);
+
+  const loadDrawingGroups = useCallback(async () => {
+    try {
+      const data = await invoke<Array<{
+        id: string;
+        name: string;
+        color?: string;
+        visible: boolean;
+        collapsed: boolean;
+      }>>("get_drawing_groups", { symbol });
+      setDrawingGroups(data || []);
+    } catch (e) {
+      console.error("Failed to load drawing groups:", e);
+      setDrawingGroups([]);
     }
   }, [symbol]);
 
@@ -759,8 +787,10 @@ export function CustomChart({
         if (newCandleAdded && autoScroll) {
           setViewport(v => {
             const visibleCount = v.endIndex - v.startIndex;
-            const newEndIdx = updated.length;
-            const newStartIdx = Math.max(0, newEndIdx - visibleCount);
+            // Keep some future space (20% of visible area)
+            const futureOffset = Math.floor(visibleCount * 0.2);
+            const newEndIdx = updated.length + futureOffset;
+            const newStartIdx = newEndIdx - visibleCount;
 
             // Recalculate price range for auto-scale
             if (autoPriceScale) {
@@ -798,7 +828,8 @@ export function CustomChart({
   useEffect(() => {
     loadKlines();
     loadDrawings();
-  }, [loadKlines, loadDrawings]);
+    loadDrawingGroups();
+  }, [loadKlines, loadDrawings, loadDrawingGroups]);
 
   // Real-time polling - update every 1 second
   useEffect(() => {
@@ -811,24 +842,82 @@ export function CustomChart({
   // ============================================
 
   useEffect(() => {
+    let rafId: number | null = null;
+
     const updateDimensions = () => {
-      if (containerRef.current && containerRef.current.parentElement) {
-        const parent = containerRef.current.parentElement;
-        const rect = parent.getBoundingClientRect();
-        if (rect.width > 0 && rect.height > 0) {
-          setDimensions({
-            width: Math.floor(rect.width),
-            height: Math.floor(rect.height) - TOOLBAR_HEIGHT,
-          });
+      // Cancel any pending RAF to avoid multiple updates
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
+
+      // Use requestAnimationFrame to ensure layout is complete
+      rafId = requestAnimationFrame(() => {
+        // Prefer canvas wrapper dimensions as it's the actual chart area
+        const wrapper = canvasWrapperRef.current;
+        if (wrapper) {
+          const rect = wrapper.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+            const newWidth = Math.floor(rect.width);
+            const newHeight = Math.floor(rect.height);
+
+            setDimensions(prev => {
+              // Only update if dimensions actually changed
+              if (prev.width !== newWidth || prev.height !== newHeight) {
+                return { width: newWidth, height: newHeight };
+              }
+              return prev;
+            });
+          }
         }
+      });
+    };
+
+    // Watch for container size changes (e.g., sidebar open/close)
+    const resizeObserver = new ResizeObserver((entries) => {
+      // Check if any entry has actual size change
+      for (const entry of entries) {
+        if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
+          updateDimensions();
+          break;
+        }
+      }
+    });
+
+    // Set up observers when refs are available
+    const setupObservers = () => {
+      // Observe the canvas wrapper itself - this is the key element
+      if (canvasWrapperRef.current) {
+        resizeObserver.observe(canvasWrapperRef.current);
+      }
+
+      // Also observe the main container
+      if (containerRef.current) {
+        resizeObserver.observe(containerRef.current);
+      }
+
+      // Also observe parent elements up to 3 levels for sidebar changes
+      let parent = containerRef.current?.parentElement;
+      for (let i = 0; i < 3 && parent; i++) {
+        resizeObserver.observe(parent);
+        parent = parent.parentElement;
       }
     };
 
-    // Initial size
-    updateDimensions();
+    // Initial size - run after a brief delay to ensure refs are set
+    const initTimer = setTimeout(() => {
+      updateDimensions();
+      setupObservers();
+    }, 50);
 
     window.addEventListener("resize", updateDimensions);
-    return () => window.removeEventListener("resize", updateDimensions);
+    return () => {
+      clearTimeout(initTimer);
+      window.removeEventListener("resize", updateDimensions);
+      resizeObserver.disconnect();
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
+    };
   }, []);
 
   // ============================================
@@ -883,16 +972,34 @@ export function CustomChart({
   const timeToX = useCallback((time: number): number => {
     if (klines.length === 0) return chartArea.left;
 
-    let closestIdx = 0;
-    let minDiff = Math.abs(klines[0].timestamp - time);
+    // Binary search for O(log n) performance instead of O(n)
+    let left = 0;
+    let right = klines.length - 1;
 
-    for (let i = 1; i < klines.length; i++) {
-      const diff = Math.abs(klines[i].timestamp - time);
-      if (diff < minDiff) {
-        minDiff = diff;
-        closestIdx = i;
+    // Handle edge cases
+    if (time <= klines[0].timestamp) {
+      const intervalMs = getIntervalMs(interval);
+      const timeDiff = time - klines[0].timestamp;
+      return indexToX(timeDiff / intervalMs);
+    }
+    if (time >= klines[right].timestamp) {
+      const intervalMs = getIntervalMs(interval);
+      const timeDiff = time - klines[right].timestamp;
+      return indexToX(right + timeDiff / intervalMs);
+    }
+
+    // Binary search to find closest kline
+    while (left < right - 1) {
+      const mid = Math.floor((left + right) / 2);
+      if (klines[mid].timestamp <= time) {
+        left = mid;
+      } else {
+        right = mid;
       }
     }
+
+    // Use the closer of left or right
+    const closestIdx = Math.abs(klines[left].timestamp - time) <= Math.abs(klines[right].timestamp - time) ? left : right;
 
     const intervalMs = getIntervalMs(interval);
     const timeDiff = time - klines[closestIdx].timestamp;
@@ -1522,10 +1629,11 @@ export function CustomChart({
 
     const { startIndex, endIndex, priceMin, priceMax } = viewport;
     const visibleStartIdx = Math.max(0, Math.floor(startIndex));
-    const visibleEndIdx = Math.min(klines.length, Math.ceil(endIndex));
+    const visibleEndIdx = Math.min(klines.length, Math.ceil(endIndex)); // For klines access
+    const labelEndIdx = Math.ceil(endIndex); // For time labels (includes future)
     const visibleKlines = klines.slice(visibleStartIdx, visibleEndIdx);
 
-    if (visibleKlines.length === 0) return;
+    if (visibleKlines.length === 0 && visibleStartIdx >= klines.length) return;
 
     const visibleCount = endIndex - startIndex;
     const candleWidth = chartArea.width / visibleCount;
@@ -1555,25 +1663,40 @@ export function CustomChart({
     // Draw time grid lines and labels (TradingView style)
     ctx.textAlign = "center";
 
-    // Simple approach: evenly space labels based on visible candles
-    const targetLabelCount = Math.min(10, Math.max(4, Math.floor(chartArea.width / 100)));
+    // Calculate label spacing based on chart width
+    const targetLabelCount = Math.min(12, Math.max(5, Math.floor(chartArea.width / 120)));
     const labelStep = Math.max(1, Math.floor(visibleCount / targetLabelCount));
 
     let lastLabelX = -Infinity;
-    const minLabelSpacing = 80; // Minimum pixels between labels
+    const minLabelSpacing = 100; // Minimum pixels between labels
+    let prevMonth = -1;
     let prevDay = -1;
 
-    for (let i = visibleStartIdx; i < visibleEndIdx; i += labelStep) {
-      if (i >= klines.length) continue;
+    const monthNames = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
 
-      const kline = klines[i];
-      const timestamp = kline.timestamp;
+    // Get interval duration in ms for future time calculation
+    const intervalMs = getIntervalMs(interval);
+    const lastKlineTime = klines.length > 0 ? klines[klines.length - 1].timestamp : Date.now();
+
+    for (let i = visibleStartIdx; i < labelEndIdx; i += labelStep) {
+      let timestamp: number;
+      const isFuture = i >= klines.length;
+
+      if (i < klines.length) {
+        // Use actual kline timestamp
+        timestamp = klines[i].timestamp;
+      } else {
+        // Calculate future timestamp
+        const futureOffset = i - klines.length + 1;
+        timestamp = lastKlineTime + (futureOffset * intervalMs);
+      }
+
       const date = new Date(timestamp);
       const x = indexToX(i);
 
       // Skip if too close to previous label or outside chart area
       if (x - lastLabelX < minLabelSpacing) continue;
-      if (x < chartArea.left + 30 || x > chartArea.right - 30) continue;
+      if (x < chartArea.left + 40 || x > chartArea.right - 40) continue;
 
       // Draw vertical grid line
       ctx.strokeStyle = COLORS.grid;
@@ -1583,47 +1706,67 @@ export function CustomChart({
       ctx.lineTo(x, chartArea.bottom);
       ctx.stroke();
 
-      // Determine if this is a major label (day change)
+      // Get date components
+      const currentMonth = date.getMonth();
       const currentDay = date.getDate();
-      const isDayChange = prevDay !== -1 && currentDay !== prevDay;
-      const isMidnight = date.getHours() === 0 && date.getMinutes() === 0;
-
-      // Format label
       const hours = date.getHours().toString().padStart(2, "0");
       const minutes = date.getMinutes().toString().padStart(2, "0");
-      const dayStr = date.getDate().toString();
-      const _monthStr = (date.getMonth() + 1).toString().padStart(2, "0"); // Reserved for extended date labels
+      const isMonthChange = prevMonth !== -1 && currentMonth !== prevMonth;
+      const isDayChange = prevDay !== -1 && currentDay !== prevDay;
 
       let label: string;
+      let subLabel: string | null = null;
       let isMajor = false;
 
       if (interval === "D" || interval === "W" || interval === "M") {
-        // Daily/weekly/monthly: always show date
-        label = `${dayStr}`;
+        // Daily/weekly/monthly: show date with month
+        if (isMonthChange || prevMonth === -1) {
+          label = `${currentDay} ${monthNames[currentMonth]}`;
+          isMajor = true;
+        } else {
+          label = `${currentDay}`;
+        }
+      } else if (isMonthChange) {
+        // Month change: show date with month
+        label = `${currentDay} ${monthNames[currentMonth]}`;
         isMajor = true;
-      } else if (isDayChange || isMidnight) {
-        // Day change or midnight: show date
-        label = `${dayStr}`;
+      } else if (isDayChange) {
+        // Day change: show date
+        label = `${currentDay}`;
+        subLabel = `${hours}:${minutes}`;
         isMajor = true;
       } else {
         // Regular time label
         label = `${hours}:${minutes}`;
       }
 
-      // Draw label with appropriate style
-      ctx.fillStyle = isMajor ? "#ffffff" : "#b8c5d6";
+      // Draw label with better visibility (future times are slightly dimmed)
+      if (isFuture) {
+        ctx.fillStyle = isMajor ? "#64748b" : "#475569";
+      } else {
+        ctx.fillStyle = isMajor ? "#ffffff" : "#e2e8f0";
+      }
       ctx.font = isMajor ? "bold 12px sans-serif" : "12px sans-serif";
-      ctx.fillText(label, x, chartArea.bottom + 20);
+      ctx.fillText(label, x, chartArea.bottom + 18);
+
+      // Draw sub-label if exists (time under date)
+      if (subLabel) {
+        ctx.fillStyle = isFuture ? "#334155" : "#94a3b8";
+        ctx.font = "10px sans-serif";
+        ctx.fillText(subLabel, x, chartArea.bottom + 32);
+      }
 
       lastLabelX = x;
+      prevMonth = currentMonth;
       prevDay = currentDay;
     }
 
     // Fallback: If no labels were drawn, draw basic labels
     if (lastLabelX === -Infinity) {
       const gridStep = Math.max(1, Math.floor(visibleCount / 8));
-      for (let i = visibleStartIdx; i < visibleEndIdx; i += gridStep) {
+      for (let i = visibleStartIdx; i < labelEndIdx; i += gridStep) {
         const x = indexToX(i);
+        const isFuture = i >= klines.length;
 
         // Draw grid line
         ctx.strokeStyle = COLORS.grid;
@@ -1634,12 +1777,18 @@ export function CustomChart({
         ctx.stroke();
 
         // Draw label
+        let timestamp: number;
         if (i < klines.length) {
-          ctx.fillStyle = "#b8c5d6";
-          ctx.font = "12px sans-serif";
-          const timeLabel = formatTime(klines[i].timestamp, interval);
-          ctx.fillText(timeLabel, x, chartArea.bottom + 20);
+          timestamp = klines[i].timestamp;
+        } else {
+          const futureOffset = i - klines.length + 1;
+          timestamp = lastKlineTime + (futureOffset * intervalMs);
         }
+
+        ctx.fillStyle = isFuture ? "#475569" : "#e2e8f0";
+        ctx.font = "12px sans-serif";
+        const timeLabel = formatTime(timestamp, interval);
+        ctx.fillText(timeLabel, x, chartArea.bottom + 18);
       }
     }
 
@@ -2531,35 +2680,132 @@ export function CustomChart({
       case "horizontal":
         if (points.length >= 1) {
           const y = points[0].y;
+          const extendL = style.extendLeft !== false;
+          const extendR = style.extendRight !== false;
+
           ctx.beginPath();
-          ctx.moveTo(chartArea.left, y);
+          ctx.moveTo(extendL ? chartArea.left : points[0].x, y);
+          ctx.lineTo(extendR ? chartArea.right : points[0].x + 200, y);
+          ctx.stroke();
+
+          // Show price label on Y-axis (TradingView style)
+          if (style.showPrice !== false && y >= chartArea.top && y <= chartArea.bottom) {
+            const tagHeight = 18;
+            const tagWidth = PADDING_RIGHT - 4;
+            const tagY = y - tagHeight / 2;
+
+            ctx.fillStyle = style.color;
+            ctx.beginPath();
+            ctx.moveTo(chartArea.right, y);
+            ctx.lineTo(chartArea.right + 5, y - 5);
+            ctx.lineTo(chartArea.right + 5, tagY);
+            ctx.lineTo(chartArea.right + tagWidth, tagY);
+            ctx.lineTo(chartArea.right + tagWidth, tagY + tagHeight);
+            ctx.lineTo(chartArea.right + 5, tagY + tagHeight);
+            ctx.lineTo(chartArea.right + 5, y + 5);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "bold 10px monospace";
+            ctx.textAlign = "left";
+            ctx.fillText(formatPrice(drawing.points[0].price), chartArea.right + 8, y + 4);
+          }
+        }
+        break;
+
+      case "horizontal_ray":
+        if (points.length >= 1) {
+          const y = points[0].y;
+          ctx.beginPath();
+          ctx.moveTo(points[0].x, y);
           ctx.lineTo(chartArea.right, y);
           ctx.stroke();
 
-          ctx.fillStyle = style.color;
-          ctx.textAlign = "left";
-          ctx.fillText(formatPrice(drawing.points[0].price), chartArea.right + 5, y + 4);
+          // Show price label on Y-axis (TradingView style)
+          if (style.showPrice !== false && y >= chartArea.top && y <= chartArea.bottom) {
+            const tagHeight = 18;
+            const tagWidth = PADDING_RIGHT - 4;
+            const tagY = y - tagHeight / 2;
+
+            ctx.fillStyle = style.color;
+            ctx.beginPath();
+            ctx.moveTo(chartArea.right, y);
+            ctx.lineTo(chartArea.right + 5, y - 5);
+            ctx.lineTo(chartArea.right + 5, tagY);
+            ctx.lineTo(chartArea.right + tagWidth, tagY);
+            ctx.lineTo(chartArea.right + tagWidth, tagY + tagHeight);
+            ctx.lineTo(chartArea.right + 5, tagY + tagHeight);
+            ctx.lineTo(chartArea.right + 5, y + 5);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "bold 10px monospace";
+            ctx.textAlign = "left";
+            ctx.fillText(formatPrice(drawing.points[0].price), chartArea.right + 8, y + 4);
+          }
         }
         break;
 
       case "vertical":
         if (points.length >= 1) {
           const x = points[0].x;
+          const extendTop = style.extendLeft !== false; // Using extendLeft for top
+          const extendBottom = style.extendRight !== false; // Using extendRight for bottom
+
           ctx.beginPath();
-          ctx.moveTo(x, chartArea.top);
-          ctx.lineTo(x, chartArea.bottom);
+          ctx.moveTo(x, extendTop ? chartArea.top : points[0].y);
+          ctx.lineTo(x, extendBottom ? chartArea.bottom : points[0].y + 100);
           ctx.stroke();
+
+          // Show time label
+          if (style.showLabels !== false) {
+            const time = new Date(drawing.points[0].time);
+            const timeText = time.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+            ctx.fillStyle = style.color;
+            ctx.textAlign = "center";
+            ctx.fillText(timeText, x, chartArea.bottom + 15);
+          }
         }
         break;
 
       case "trendline":
       case "arrow":
         if (points.length >= 2) {
+          const extendLeft = style.extendLeft || false;
+          const extendRight = style.extendRight || false;
+
+          // Calculate line direction and length
+          const dx = points[1].x - points[0].x;
+          const dy = points[1].y - points[0].y;
+          const lineLen = Math.sqrt(dx * dx + dy * dy);
+
+          // Calculate start and end points with extensions
+          let startX = points[0].x;
+          let startY = points[0].y;
+          let endX = points[1].x;
+          let endY = points[1].y;
+
+          if (lineLen > 0) {
+            const extendAmount = dimensions.width * 2;
+            if (extendLeft) {
+              startX = points[0].x - (dx / lineLen) * extendAmount;
+              startY = points[0].y - (dy / lineLen) * extendAmount;
+            }
+            if (extendRight) {
+              endX = points[1].x + (dx / lineLen) * extendAmount;
+              endY = points[1].y + (dy / lineLen) * extendAmount;
+            }
+          }
+
+          // Draw the line
           ctx.beginPath();
-          ctx.moveTo(points[0].x, points[0].y);
-          ctx.lineTo(points[1].x, points[1].y);
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(endX, endY);
           ctx.stroke();
 
+          // Draw arrow head if arrow type
           if (drawing.drawing_type === "arrow") {
             const angle = Math.atan2(points[1].y - points[0].y, points[1].x - points[0].x);
             const headLen = 12;
@@ -2576,6 +2822,71 @@ export function CustomChart({
             );
             ctx.stroke();
           }
+
+          // Show labels/price/percentage if enabled
+          const shouldShowPrice = style.showPrice !== false;
+          const shouldShowPercentage = style.showPercentage === true;
+          const shouldShowBars = style.showBars === true;
+
+          // Draw price label on Y-axis (right side) - TradingView style
+          if (shouldShowPrice) {
+            const endPrice = drawing.points[1].price;
+            const endY = points[1].y;
+
+            // Only draw if price is in visible area
+            if (endY >= chartArea.top && endY <= chartArea.bottom) {
+              const tagHeight = 18;
+              const tagWidth = PADDING_RIGHT - 4;
+              const tagY = endY - tagHeight / 2;
+
+              // Draw colored background tag with arrow
+              ctx.fillStyle = style.color;
+              ctx.beginPath();
+              ctx.moveTo(chartArea.right, endY);
+              ctx.lineTo(chartArea.right + 5, endY - 5);
+              ctx.lineTo(chartArea.right + 5, tagY);
+              ctx.lineTo(chartArea.right + tagWidth, tagY);
+              ctx.lineTo(chartArea.right + tagWidth, tagY + tagHeight);
+              ctx.lineTo(chartArea.right + 5, tagY + tagHeight);
+              ctx.lineTo(chartArea.right + 5, endY + 5);
+              ctx.closePath();
+              ctx.fill();
+
+              // Draw price text
+              ctx.fillStyle = "#ffffff";
+              ctx.font = "bold 10px monospace";
+              ctx.textAlign = "left";
+              ctx.fillText(formatPrice(endPrice), chartArea.right + 8, endY + 4);
+            }
+          }
+
+          // Show percentage and bar count on the line
+          if (shouldShowPercentage || shouldShowBars) {
+            const priceDiff = drawing.points[1].price - drawing.points[0].price;
+            const pctChange = (priceDiff / drawing.points[0].price) * 100;
+            const midX = (points[0].x + points[1].x) / 2;
+            const midY = (points[0].y + points[1].y) / 2;
+
+            ctx.fillStyle = style.color;
+            ctx.font = "11px sans-serif";
+            ctx.textAlign = "left";
+
+            let labelY = midY - 8;
+
+            // Show percentage change
+            if (shouldShowPercentage) {
+              const pctText = `${pctChange >= 0 ? "+" : ""}${pctChange.toFixed(2)}%`;
+              ctx.fillText(pctText, midX + 5, labelY);
+              labelY += 14;
+            }
+
+            // Show bar count
+            if (shouldShowBars) {
+              const timeDiff = Math.abs(drawing.points[1].time - drawing.points[0].time);
+              const bars = Math.round(timeDiff / getIntervalMs(interval));
+              ctx.fillText(`${bars} bars`, midX + 5, labelY);
+            }
+          }
         }
         break;
 
@@ -2586,13 +2897,58 @@ export function CustomChart({
           const len = Math.sqrt(dx * dx + dy * dy);
           if (len > 0) {
             const extendLen = dimensions.width * 2;
+            const startX = style.extendLeft ? points[0].x - (dx / len) * extendLen : points[0].x;
+            const startY = style.extendLeft ? points[0].y - (dy / len) * extendLen : points[0].y;
+
             ctx.beginPath();
-            ctx.moveTo(points[0].x, points[0].y);
+            ctx.moveTo(startX, startY);
             ctx.lineTo(
               points[0].x + (dx / len) * extendLen,
               points[0].y + (dy / len) * extendLen
             );
             ctx.stroke();
+
+            // Draw price label on Y-axis (right side)
+            if (style.showPrice !== false) {
+              const endPrice = drawing.points[1].price;
+              const endY = points[1].y;
+
+              if (endY >= chartArea.top && endY <= chartArea.bottom) {
+                const tagHeight = 18;
+                const tagWidth = PADDING_RIGHT - 4;
+                const tagY = endY - tagHeight / 2;
+
+                ctx.fillStyle = style.color;
+                ctx.beginPath();
+                ctx.moveTo(chartArea.right, endY);
+                ctx.lineTo(chartArea.right + 5, endY - 5);
+                ctx.lineTo(chartArea.right + 5, tagY);
+                ctx.lineTo(chartArea.right + tagWidth, tagY);
+                ctx.lineTo(chartArea.right + tagWidth, tagY + tagHeight);
+                ctx.lineTo(chartArea.right + 5, tagY + tagHeight);
+                ctx.lineTo(chartArea.right + 5, endY + 5);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "bold 10px monospace";
+                ctx.textAlign = "left";
+                ctx.fillText(formatPrice(endPrice), chartArea.right + 8, endY + 4);
+              }
+            }
+
+            // Show percentage on the line
+            if (style.showPercentage === true) {
+              const priceDiff = drawing.points[1].price - drawing.points[0].price;
+              const pctChange = (priceDiff / drawing.points[0].price) * 100;
+              const midX = (points[0].x + points[1].x) / 2;
+              const midY = (points[0].y + points[1].y) / 2;
+
+              ctx.fillStyle = style.color;
+              ctx.font = "11px sans-serif";
+              ctx.textAlign = "left";
+              ctx.fillText(`${pctChange >= 0 ? "+" : ""}${pctChange.toFixed(2)}%`, midX + 5, midY - 8);
+            }
           }
         }
         break;
@@ -2614,6 +2970,48 @@ export function CustomChart({
               points[0].y + (dy / len) * extendLen
             );
             ctx.stroke();
+
+            // Draw price label on Y-axis (right side)
+            if (style.showPrice !== false) {
+              const endPrice = drawing.points[1].price;
+              const endY = points[1].y;
+
+              if (endY >= chartArea.top && endY <= chartArea.bottom) {
+                const tagHeight = 18;
+                const tagWidth = PADDING_RIGHT - 4;
+                const tagY = endY - tagHeight / 2;
+
+                ctx.fillStyle = style.color;
+                ctx.beginPath();
+                ctx.moveTo(chartArea.right, endY);
+                ctx.lineTo(chartArea.right + 5, endY - 5);
+                ctx.lineTo(chartArea.right + 5, tagY);
+                ctx.lineTo(chartArea.right + tagWidth, tagY);
+                ctx.lineTo(chartArea.right + tagWidth, tagY + tagHeight);
+                ctx.lineTo(chartArea.right + 5, tagY + tagHeight);
+                ctx.lineTo(chartArea.right + 5, endY + 5);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "bold 10px monospace";
+                ctx.textAlign = "left";
+                ctx.fillText(formatPrice(endPrice), chartArea.right + 8, endY + 4);
+              }
+            }
+
+            // Show percentage on the line
+            if (style.showPercentage === true) {
+              const priceDiff = drawing.points[1].price - drawing.points[0].price;
+              const pctChange = (priceDiff / drawing.points[0].price) * 100;
+              const midX = (points[0].x + points[1].x) / 2;
+              const midY = (points[0].y + points[1].y) / 2;
+
+              ctx.fillStyle = style.color;
+              ctx.font = "11px sans-serif";
+              ctx.textAlign = "left";
+              ctx.fillText(`${pctChange >= 0 ? "+" : ""}${pctChange.toFixed(2)}%`, midX + 5, midY - 8);
+            }
           }
         }
         break;
@@ -2696,8 +3094,14 @@ export function CustomChart({
       // Fibonacci Extension (3 points)
       case "fib_extension":
         if (points.length >= 3) {
-          const EXT_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.414, 1.618, 2];
-          const EXT_COLORS = ["#787B86", "#F23645", "#FF9800", "#4CAF50", "#089981", "#00BCD4", "#787B86", "#2962FF", "#9C27B0", "#E91E63", "#673AB7"];
+          // Use custom levels/colors from style or defaults
+          const DEFAULT_EXT_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.414, 1.618, 2];
+          const DEFAULT_EXT_COLORS = ["#787B86", "#F23645", "#FF9800", "#4CAF50", "#089981", "#00BCD4", "#787B86", "#2962FF", "#9C27B0", "#E91E63", "#673AB7"];
+
+          const extLevels = style.fibLevels || DEFAULT_EXT_LEVELS;
+          const extColors = style.fibColors || DEFAULT_EXT_COLORS;
+          const showPrice = style.showPrice !== false;
+          const extendRight = style.extendRight !== false;
 
           // Point A (start), B (end), C (extension base)
           const aPrice = drawing.points[0].price;
@@ -2714,12 +3118,12 @@ export function CustomChart({
           ctx.stroke();
 
           // Draw extension levels from point C
-          const rightX = chartArea.right;
+          const rightX = extendRight ? chartArea.right : Math.max(points[0].x, points[1].x, points[2].x) + 100;
 
-          EXT_LEVELS.forEach((level, i) => {
+          extLevels.forEach((level, i) => {
             const price = cPrice + diff * level;
             const y = priceToY(price);
-            const color = EXT_COLORS[i] || "#787B86";
+            const color = extColors[i] || DEFAULT_EXT_COLORS[i % DEFAULT_EXT_COLORS.length];
 
             ctx.strokeStyle = color;
             ctx.lineWidth = level === 0 || level === 1 ? 1.5 : 1;
@@ -2733,7 +3137,8 @@ export function CustomChart({
             ctx.fillStyle = color;
             ctx.textAlign = "left";
             ctx.font = "11px sans-serif";
-            ctx.fillText(`${level} (${formatPrice(price)})`, rightX + 5, y + 4);
+            const labelText = showPrice ? `${level} (${formatPrice(price)})` : `${level}`;
+            ctx.fillText(labelText, rightX + 5, y + 4);
           });
 
           ctx.setLineDash([]);
@@ -2766,22 +3171,6 @@ export function CustomChart({
               ctx.fillText(`${level}`, x, chartArea.bottom + 12);
             }
           });
-        }
-        break;
-
-      // Horizontal Ray - extends only to the right
-      case "horizontal_ray":
-        if (points.length >= 1) {
-          const y = points[0].y;
-          const x = points[0].x;
-          ctx.beginPath();
-          ctx.moveTo(x, y);
-          ctx.lineTo(chartArea.right, y);
-          ctx.stroke();
-
-          ctx.fillStyle = style.color;
-          ctx.textAlign = "left";
-          ctx.fillText(formatPrice(drawing.points[0].price), chartArea.right + 5, y + 4);
         }
         break;
 
@@ -2857,21 +3246,65 @@ export function CustomChart({
       // Parallel Channel
       case "parallel_channel":
         if (points.length >= 3) {
-          // Main line
+          const showMiddleLine = style.showMiddleLine || false;
+          const channelLevels = style.channelLevels || [];
+          const extendLeft = style.extendLeft || false;
+          const extendRight = style.extendRight || false;
+
+          // Calculate channel direction and offset
+          const dx = points[1].x - points[0].x;
+          const dy = points[1].y - points[0].y;
+          const lineLen = Math.sqrt(dx * dx + dy * dy);
+          const offsetY = points[2].y - points[0].y;
+
+          // Calculate extension
+          const extendAmount = 2000;
+          const extLeftX = extendLeft ? -extendAmount * (dx / lineLen) : 0;
+          const extLeftY = extendLeft ? -extendAmount * (dy / lineLen) : 0;
+          const extRightX = extendRight ? extendAmount * (dx / lineLen) : 0;
+          const extRightY = extendRight ? extendAmount * (dy / lineLen) : 0;
+
+          // Draw main upper line
           ctx.beginPath();
-          ctx.moveTo(points[0].x, points[0].y);
-          ctx.lineTo(points[1].x, points[1].y);
+          ctx.moveTo(points[0].x + extLeftX, points[0].y + extLeftY);
+          ctx.lineTo(points[1].x + extRightX, points[1].y + extRightY);
           ctx.stroke();
 
-          // Parallel line offset
-          const offsetY = points[2].y - points[0].y;
+          // Draw main lower line
           ctx.beginPath();
-          ctx.moveTo(points[0].x, points[0].y + offsetY);
-          ctx.lineTo(points[1].x, points[1].y + offsetY);
+          ctx.moveTo(points[0].x + extLeftX, points[0].y + offsetY + extLeftY);
+          ctx.lineTo(points[1].x + extRightX, points[1].y + offsetY + extRightY);
           ctx.stroke();
+
+          // Draw middle line
+          if (showMiddleLine) {
+            ctx.strokeStyle = style.color + "80";
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            ctx.moveTo(points[0].x + extLeftX, points[0].y + offsetY / 2 + extLeftY);
+            ctx.lineTo(points[1].x + extRightX, points[1].y + offsetY / 2 + extRightY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.strokeStyle = style.color;
+          }
+
+          // Draw intermediate levels
+          if (channelLevels.length > 0) {
+            ctx.setLineDash([3, 3]);
+            ctx.strokeStyle = style.color + "60";
+            channelLevels.forEach(level => {
+              const levelOffset = offsetY * level;
+              ctx.beginPath();
+              ctx.moveTo(points[0].x + extLeftX, points[0].y + levelOffset + extLeftY);
+              ctx.lineTo(points[1].x + extRightX, points[1].y + levelOffset + extRightY);
+              ctx.stroke();
+            });
+            ctx.setLineDash([]);
+            ctx.strokeStyle = style.color;
+          }
 
           // Fill channel
-          ctx.fillStyle = (style.color) + "15";
+          ctx.fillStyle = (style.fillColor || style.color) + Math.round((style.fillOpacity || 0.1) * 255).toString(16).padStart(2, '0');
           ctx.beginPath();
           ctx.moveTo(points[0].x, points[0].y);
           ctx.lineTo(points[1].x, points[1].y);
@@ -2888,6 +3321,13 @@ export function CustomChart({
       case "modified_schiff":
       case "inside_pitchfork":
         if (points.length >= 3) {
+          // Get pitchfork settings from style
+          const pitchforkLevels = style.pitchforkLevels || [0.25, 0.5, 0.75];
+          const pitchforkColors = style.pitchforkColors || ["#787B86", "#2962FF", "#787B86"];
+          const medianColor = style.medianColor || "#FF9800";
+          const showMedian = style.showMedian !== false;
+          const showLevels = style.showPitchforkLevels !== false;
+
           // Determine median start based on variant
           let medianStartX = points[0].x;
           let medianStartY = points[0].y;
@@ -2906,41 +3346,92 @@ export function CustomChart({
           const medianEndX = (points[1].x + points[2].x) / 2;
           const medianEndY = (points[1].y + points[2].y) / 2;
 
-          // Draw median line
-          ctx.setLineDash([]);
-          ctx.beginPath();
-          ctx.moveTo(medianStartX, medianStartY);
-          ctx.lineTo(medianEndX, medianEndY);
-          ctx.stroke();
-
-          // Extend median line
+          // Calculate direction for extension
           const mdx = medianEndX - medianStartX;
           const mdy = medianEndY - medianStartY;
           const mlen = Math.sqrt(mdx * mdx + mdy * mdy);
-          if (mlen > 0) {
-            ctx.beginPath();
-            ctx.moveTo(medianEndX, medianEndY);
-            ctx.lineTo(medianEndX + (mdx / mlen) * 1000, medianEndY + (mdy / mlen) * 1000);
-            ctx.stroke();
-          }
 
-          // Draw upper parallel
-          ctx.strokeStyle = "#22c55e";
+          // Calculate offsets for upper and lower lines (100% level)
           const upperOffsetX = points[1].x - medianEndX;
           const upperOffsetY = points[1].y - medianEndY;
-          ctx.beginPath();
-          ctx.moveTo(medianStartX + upperOffsetX, medianStartY + upperOffsetY);
-          ctx.lineTo(medianEndX + upperOffsetX + (mdx / mlen) * 1000, medianEndY + upperOffsetY + (mdy / mlen) * 1000);
-          ctx.stroke();
-
-          // Draw lower parallel
-          ctx.strokeStyle = "#ef4444";
           const lowerOffsetX = points[2].x - medianEndX;
           const lowerOffsetY = points[2].y - medianEndY;
+
+          // Draw median line
+          if (showMedian && mlen > 0) {
+            ctx.strokeStyle = medianColor;
+            ctx.lineWidth = style.lineWidth + 0.5;
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.moveTo(medianStartX, medianStartY);
+            ctx.lineTo(medianEndX + (mdx / mlen) * 2000, medianEndY + (mdy / mlen) * 2000);
+            ctx.stroke();
+            ctx.lineWidth = style.lineWidth;
+
+            // Draw median label
+            if (style.showLabels !== false) {
+              ctx.fillStyle = medianColor;
+              ctx.font = "10px sans-serif";
+              ctx.textAlign = "left";
+              ctx.fillText("0", medianEndX + (mdx / mlen) * 50 + 5, medianEndY + (mdy / mlen) * 50);
+            }
+          }
+
+          // Draw upper boundary (100%)
+          ctx.strokeStyle = "#22c55e";
+          ctx.beginPath();
+          ctx.moveTo(medianStartX + upperOffsetX, medianStartY + upperOffsetY);
+          ctx.lineTo(medianEndX + upperOffsetX + (mdx / mlen) * 2000, medianEndY + upperOffsetY + (mdy / mlen) * 2000);
+          ctx.stroke();
+          if (style.showLabels !== false) {
+            ctx.fillStyle = "#22c55e";
+            ctx.fillText("100%", medianEndX + upperOffsetX + (mdx / mlen) * 50 + 5, medianEndY + upperOffsetY + (mdy / mlen) * 50);
+          }
+
+          // Draw lower boundary (100%)
+          ctx.strokeStyle = "#ef4444";
           ctx.beginPath();
           ctx.moveTo(medianStartX + lowerOffsetX, medianStartY + lowerOffsetY);
-          ctx.lineTo(medianEndX + lowerOffsetX + (mdx / mlen) * 1000, medianEndY + lowerOffsetY + (mdy / mlen) * 1000);
+          ctx.lineTo(medianEndX + lowerOffsetX + (mdx / mlen) * 2000, medianEndY + lowerOffsetY + (mdy / mlen) * 2000);
           ctx.stroke();
+          if (style.showLabels !== false) {
+            ctx.fillStyle = "#ef4444";
+            ctx.fillText("-100%", medianEndX + lowerOffsetX + (mdx / mlen) * 50 + 5, medianEndY + lowerOffsetY + (mdy / mlen) * 50);
+          }
+
+          // Draw intermediate levels
+          if (showLevels && mlen > 0) {
+            pitchforkLevels.forEach((level, i) => {
+              const levelColor = pitchforkColors[i] || "#787B86";
+              ctx.strokeStyle = levelColor;
+              ctx.setLineDash([5, 5]);
+
+              // Upper level
+              const upperLevelOffsetX = upperOffsetX * level;
+              const upperLevelOffsetY = upperOffsetY * level;
+              ctx.beginPath();
+              ctx.moveTo(medianStartX + upperLevelOffsetX, medianStartY + upperLevelOffsetY);
+              ctx.lineTo(medianEndX + upperLevelOffsetX + (mdx / mlen) * 2000, medianEndY + upperLevelOffsetY + (mdy / mlen) * 2000);
+              ctx.stroke();
+
+              // Lower level
+              const lowerLevelOffsetX = lowerOffsetX * level;
+              const lowerLevelOffsetY = lowerOffsetY * level;
+              ctx.beginPath();
+              ctx.moveTo(medianStartX + lowerLevelOffsetX, medianStartY + lowerLevelOffsetY);
+              ctx.lineTo(medianEndX + lowerLevelOffsetX + (mdx / mlen) * 2000, medianEndY + lowerLevelOffsetY + (mdy / mlen) * 2000);
+              ctx.stroke();
+
+              // Labels
+              if (style.showLabels !== false) {
+                ctx.fillStyle = levelColor;
+                const pctLabel = `${Math.round(level * 100)}%`;
+                ctx.fillText(pctLabel, medianEndX + upperLevelOffsetX + (mdx / mlen) * 50 + 5, medianEndY + upperLevelOffsetY + (mdy / mlen) * 50);
+                ctx.fillText(`-${pctLabel}`, medianEndX + lowerLevelOffsetX + (mdx / mlen) * 50 + 5, medianEndY + lowerLevelOffsetY + (mdy / mlen) * 50);
+              }
+            });
+            ctx.setLineDash([]);
+          }
 
           ctx.strokeStyle = style.color;
         }
@@ -3176,6 +3667,9 @@ export function CustomChart({
       // ABCD Pattern
       case "abcd":
         if (points.length >= 4) {
+          const showRatios = style.showPercentage !== false;
+
+          // Draw lines
           ctx.beginPath();
           ctx.moveTo(points[0].x, points[0].y);
           for (let i = 1; i < points.length; i++) {
@@ -3183,20 +3677,56 @@ export function CustomChart({
           }
           ctx.stroke();
 
-          // Labels
+          // Get prices for ratio calculations
+          const abcdPrices = drawing.points.map(p => p.price);
+
+          // Calculate Fibonacci ratios
+          const abMove = Math.abs(abcdPrices[1] - abcdPrices[0]); // A to B
+          const bcMove = Math.abs(abcdPrices[2] - abcdPrices[1]); // B to C
+          const cdMove = Math.abs(abcdPrices[3] - abcdPrices[2]); // C to D
+
+          const bcRatio = abMove > 0 ? bcMove / abMove : 0; // BC retracement of AB
+          const cdRatio = bcMove > 0 ? cdMove / bcMove : 0; // CD extension of BC
+
+          // Labels and ratios
           const labels = ["A", "B", "C", "D"];
+          ctx.font = "11px sans-serif";
           ctx.fillStyle = style.color;
+
           points.forEach((p, i) => {
             if (i < labels.length) {
-              ctx.fillText(labels[i], p.x + 5, p.y - 5);
+              const isTop = i > 0 ? abcdPrices[i] > abcdPrices[i - 1] : true;
+              const yOffset = isTop ? -10 : 15;
+              ctx.textAlign = "center";
+              ctx.fillText(labels[i], p.x, p.y + yOffset);
             }
           });
+
+          // Draw ratio labels on the legs
+          if (showRatios && points.length >= 4) {
+            ctx.font = "10px sans-serif";
+            ctx.fillStyle = "#22c55e";
+
+            // BC ratio (between B and C)
+            const bcMidX = (points[1].x + points[2].x) / 2;
+            const bcMidY = (points[1].y + points[2].y) / 2;
+            ctx.fillText(`${bcRatio.toFixed(3)}`, bcMidX + 10, bcMidY);
+
+            // CD ratio (between C and D)
+            const cdMidX = (points[2].x + points[3].x) / 2;
+            const cdMidY = (points[2].y + points[3].y) / 2;
+            ctx.fillStyle = "#3b82f6";
+            ctx.fillText(`${cdRatio.toFixed(3)}`, cdMidX + 10, cdMidY);
+          }
         }
         break;
 
       // XABCD Pattern
       case "xabcd":
         if (points.length >= 5) {
+          const showRatios = style.showPercentage !== false;
+
+          // Draw lines
           ctx.beginPath();
           ctx.moveTo(points[0].x, points[0].y);
           for (let i = 1; i < points.length; i++) {
@@ -3204,14 +3734,60 @@ export function CustomChart({
           }
           ctx.stroke();
 
+          // Get prices for ratio calculations
+          const xabcdPrices = drawing.points.map(p => p.price);
+
+          // Calculate Fibonacci ratios
+          const xaMove = Math.abs(xabcdPrices[1] - xabcdPrices[0]); // X to A
+          const abMove = Math.abs(xabcdPrices[2] - xabcdPrices[1]); // A to B
+          const bcMove = Math.abs(xabcdPrices[3] - xabcdPrices[2]); // B to C
+          const cdMove = Math.abs(xabcdPrices[4] - xabcdPrices[3]); // C to D
+
+          const abRatio = xaMove > 0 ? abMove / xaMove : 0; // AB retracement of XA
+          const bcRatio = abMove > 0 ? bcMove / abMove : 0; // BC retracement of AB
+          const cdRatio = bcMove > 0 ? cdMove / bcMove : 0; // CD extension of BC
+          const xdRatio = xaMove > 0 ? Math.abs(xabcdPrices[4] - xabcdPrices[0]) / xaMove : 0; // XD
+
           // Labels
           const xabcdLabels = ["X", "A", "B", "C", "D"];
+          ctx.font = "11px sans-serif";
           ctx.fillStyle = style.color;
+
           points.forEach((p, i) => {
             if (i < xabcdLabels.length) {
-              ctx.fillText(xabcdLabels[i], p.x + 5, p.y - 5);
+              const isTop = i > 0 ? xabcdPrices[i] > xabcdPrices[i - 1] : true;
+              const yOffset = isTop ? -10 : 15;
+              ctx.textAlign = "center";
+              ctx.fillText(xabcdLabels[i], p.x, p.y + yOffset);
             }
           });
+
+          // Draw ratio labels on the legs
+          if (showRatios && points.length >= 5) {
+            ctx.font = "10px sans-serif";
+
+            // AB ratio (between A and B)
+            const abMidX = (points[1].x + points[2].x) / 2;
+            const abMidY = (points[1].y + points[2].y) / 2;
+            ctx.fillStyle = "#f59e0b";
+            ctx.fillText(`${abRatio.toFixed(3)}`, abMidX + 10, abMidY);
+
+            // BC ratio (between B and C)
+            const bcMidX = (points[2].x + points[3].x) / 2;
+            const bcMidY = (points[2].y + points[3].y) / 2;
+            ctx.fillStyle = "#22c55e";
+            ctx.fillText(`${bcRatio.toFixed(3)}`, bcMidX + 10, bcMidY);
+
+            // CD ratio (between C and D)
+            const cdMidX = (points[3].x + points[4].x) / 2;
+            const cdMidY = (points[3].y + points[4].y) / 2;
+            ctx.fillStyle = "#3b82f6";
+            ctx.fillText(`${cdRatio.toFixed(3)}`, cdMidX + 10, cdMidY);
+
+            // XD ratio (show near D point)
+            ctx.fillStyle = "#ef4444";
+            ctx.fillText(`XD: ${xdRatio.toFixed(3)}`, points[4].x + 20, points[4].y);
+          }
         }
         break;
 
@@ -3254,6 +3830,10 @@ export function CustomChart({
       case "anchored_vwap":
         if (points.length >= 1 && klines.length > 0) {
           const anchorTime = drawing.points[0].time;
+          const vwapSource = style.vwapSource || "hlc3";
+          const showBands = style.showVwapBands || false;
+          const bandMultipliers = style.vwapBands || [1, 2, 3];
+          const bandColors = style.vwapBandColors || ["#2962FF60", "#2962FF40", "#2962FF20"];
 
           // Find klines from anchor point forward
           const anchorIdx = klines.findIndex(k => k.timestamp >= anchorTime);
@@ -3261,22 +3841,43 @@ export function CustomChart({
             const relevantKlines = klines.slice(anchorIdx);
 
             if (relevantKlines.length > 0) {
-              // Calculate cumulative VWAP
-              let sumTPV = 0;  // Sum of (Typical Price * Volume)
+              // Calculate cumulative VWAP and variance for bands
+              let sumTPV = 0;
               let sumVolume = 0;
-              const vwapPoints: { x: number; y: number; vwap: number }[] = [];
+              let sumSquaredDiff = 0;
+              const vwapData: { x: number; vwap: number; stdDev: number }[] = [];
 
               for (const kline of relevantKlines) {
-                const typicalPrice = (kline.high + kline.low + kline.close) / 3;
-                sumTPV += typicalPrice * kline.volume;
+                // Source price based on settings
+                let sourcePrice: number;
+                switch (vwapSource) {
+                  case "hl2":
+                    sourcePrice = (kline.high + kline.low) / 2;
+                    break;
+                  case "ohlc4":
+                    sourcePrice = (kline.open + kline.high + kline.low + kline.close) / 4;
+                    break;
+                  case "close":
+                    sourcePrice = kline.close;
+                    break;
+                  default: // hlc3
+                    sourcePrice = (kline.high + kline.low + kline.close) / 3;
+                }
+
+                sumTPV += sourcePrice * kline.volume;
                 sumVolume += kline.volume;
 
                 if (sumVolume > 0) {
                   const vwap = sumTPV / sumVolume;
-                  vwapPoints.push({
+                  // Calculate variance for standard deviation
+                  sumSquaredDiff += kline.volume * Math.pow(sourcePrice - vwap, 2);
+                  const variance = sumSquaredDiff / sumVolume;
+                  const stdDev = Math.sqrt(variance);
+
+                  vwapData.push({
                     x: timeToX(kline.timestamp),
-                    y: priceToY(vwap),
                     vwap,
+                    stdDev,
                   });
                 }
               }
@@ -3287,37 +3888,998 @@ export function CustomChart({
               ctx.arc(points[0].x, points[0].y, 5, 0, Math.PI * 2);
               ctx.fill();
 
-              // Draw VWAP line
-              if (vwapPoints.length > 1) {
+              if (vwapData.length > 1) {
+                // Draw bands first (so VWAP line is on top)
+                if (showBands) {
+                  bandMultipliers.forEach((mult, bandIdx) => {
+                    const bandColor = bandColors[bandIdx] || "#2962FF40";
+
+                    // Upper band
+                    ctx.strokeStyle = bandColor;
+                    ctx.setLineDash([3, 3]);
+                    ctx.beginPath();
+                    ctx.moveTo(vwapData[0].x, priceToY(vwapData[0].vwap + vwapData[0].stdDev * mult));
+                    for (let i = 1; i < vwapData.length; i++) {
+                      ctx.lineTo(vwapData[i].x, priceToY(vwapData[i].vwap + vwapData[i].stdDev * mult));
+                    }
+                    ctx.stroke();
+
+                    // Lower band
+                    ctx.beginPath();
+                    ctx.moveTo(vwapData[0].x, priceToY(vwapData[0].vwap - vwapData[0].stdDev * mult));
+                    for (let i = 1; i < vwapData.length; i++) {
+                      ctx.lineTo(vwapData[i].x, priceToY(vwapData[i].vwap - vwapData[i].stdDev * mult));
+                    }
+                    ctx.stroke();
+                  });
+                  ctx.setLineDash([]);
+                }
+
+                // Draw main VWAP line
+                ctx.strokeStyle = style.color;
+                ctx.lineWidth = style.lineWidth;
                 ctx.beginPath();
-                ctx.moveTo(vwapPoints[0].x, vwapPoints[0].y);
-                for (let i = 1; i < vwapPoints.length; i++) {
-                  ctx.lineTo(vwapPoints[i].x, vwapPoints[i].y);
+                ctx.moveTo(vwapData[0].x, priceToY(vwapData[0].vwap));
+                for (let i = 1; i < vwapData.length; i++) {
+                  ctx.lineTo(vwapData[i].x, priceToY(vwapData[i].vwap));
                 }
                 ctx.stroke();
 
-                // Draw price tag on Y-axis (like regular VWAP)
-                const lastPoint = vwapPoints[vwapPoints.length - 1];
-                const tagY = lastPoint.y;
+                // Draw price tag on Y-axis
+                const lastData = vwapData[vwapData.length - 1];
+                const tagY = priceToY(lastData.vwap);
                 const tagX = chartArea.right;
 
-                // Draw background box
                 ctx.fillStyle = style.color;
                 ctx.fillRect(tagX + 2, tagY - 8, PADDING_RIGHT - 6, 16);
 
-                // Draw price text
                 ctx.fillStyle = "#000";
                 ctx.font = "10px monospace";
                 ctx.textAlign = "left";
-                ctx.fillText(formatPrice(lastPoint.vwap), tagX + 5, tagY + 4);
+                ctx.fillText(formatPrice(lastData.vwap), tagX + 5, tagY + 4);
 
-                // Draw small "A" marker to indicate anchored
-                ctx.fillStyle = "#000";
                 ctx.font = "bold 8px sans-serif";
                 ctx.fillText("A", tagX + PADDING_RIGHT - 14, tagY + 3);
               }
             }
           }
+        }
+        break;
+
+      // Gann Fan
+      case "gann_fan":
+        if (points.length >= 2) {
+          const gannAngles = [
+            { ratio: 8, label: "8×1", color: "#787B86" },
+            { ratio: 4, label: "4×1", color: "#787B86" },
+            { ratio: 3, label: "3×1", color: "#787B86" },
+            { ratio: 2, label: "2×1", color: "#22c55e" },
+            { ratio: 1, label: "1×1", color: "#FF9800" },
+            { ratio: 0.5, label: "1×2", color: "#ef4444" },
+            { ratio: 0.333, label: "1×3", color: "#787B86" },
+            { ratio: 0.25, label: "1×4", color: "#787B86" },
+            { ratio: 0.125, label: "1×8", color: "#787B86" },
+          ];
+
+          const startX = points[0].x;
+          const startY = points[0].y;
+          const dx = points[1].x - points[0].x;
+          const dy = points[1].y - points[0].y;
+
+          // Calculate scale from the reference line (should be 1×1)
+          const pixelsPerUnit = Math.abs(dy / dx);
+
+          gannAngles.forEach(angle => {
+            const endX = startX + 2000;
+            const angleY = startY + (dy > 0 ? 1 : -1) * (endX - startX) * pixelsPerUnit * angle.ratio;
+
+            ctx.strokeStyle = angle.color;
+            ctx.lineWidth = angle.ratio === 1 ? 2 : 1;
+            ctx.setLineDash(angle.ratio === 1 ? [] : [3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(endX, angleY);
+            ctx.stroke();
+
+            // Label
+            if (style.showLabels !== false) {
+              ctx.fillStyle = angle.color;
+              ctx.font = "10px sans-serif";
+              ctx.textAlign = "left";
+              ctx.fillText(angle.label, endX - 50, angleY);
+            }
+          });
+
+          ctx.setLineDash([]);
+          ctx.lineWidth = style.lineWidth;
+          ctx.strokeStyle = style.color;
+        }
+        break;
+
+      // Gann Box
+      case "gann_box":
+        if (points.length >= 2) {
+          const x1 = Math.min(points[0].x, points[1].x);
+          const x2 = Math.max(points[0].x, points[1].x);
+          const y1 = Math.min(points[0].y, points[1].y);
+          const y2 = Math.max(points[0].y, points[1].y);
+          const width = x2 - x1;
+          const height = y2 - y1;
+
+          // Draw outer box
+          ctx.strokeStyle = style.color;
+          ctx.strokeRect(x1, y1, width, height);
+
+          // Draw grid lines (Gann divisions)
+          const divisions = [0.25, 0.333, 0.5, 0.667, 0.75];
+          ctx.setLineDash([2, 2]);
+          ctx.strokeStyle = style.color + "60";
+
+          // Vertical divisions
+          divisions.forEach(div => {
+            const x = x1 + width * div;
+            ctx.beginPath();
+            ctx.moveTo(x, y1);
+            ctx.lineTo(x, y2);
+            ctx.stroke();
+          });
+
+          // Horizontal divisions
+          divisions.forEach(div => {
+            const y = y1 + height * div;
+            ctx.beginPath();
+            ctx.moveTo(x1, y);
+            ctx.lineTo(x2, y);
+            ctx.stroke();
+          });
+
+          // Diagonal lines
+          ctx.strokeStyle = style.color + "40";
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.moveTo(x1, y2);
+          ctx.lineTo(x2, y1);
+          ctx.stroke();
+
+          ctx.setLineDash([]);
+          ctx.strokeStyle = style.color;
+        }
+        break;
+
+      // Gann Square
+      case "gann_square":
+        if (points.length >= 2) {
+          const size = Math.max(
+            Math.abs(points[1].x - points[0].x),
+            Math.abs(points[1].y - points[0].y)
+          );
+          const x1 = points[0].x;
+          const y1 = points[0].y;
+
+          // Draw square
+          ctx.strokeStyle = style.color;
+          ctx.strokeRect(x1, y1, size, size);
+
+          // Draw diagonal lines from corners to center
+          const cx = x1 + size / 2;
+          const cy = y1 + size / 2;
+
+          ctx.setLineDash([2, 2]);
+          ctx.strokeStyle = style.color + "60";
+
+          // Diagonals
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x1 + size, y1 + size);
+          ctx.moveTo(x1 + size, y1);
+          ctx.lineTo(x1, y1 + size);
+          ctx.stroke();
+
+          // Cross through center
+          ctx.beginPath();
+          ctx.moveTo(cx, y1);
+          ctx.lineTo(cx, y1 + size);
+          ctx.moveTo(x1, cy);
+          ctx.lineTo(x1 + size, cy);
+          ctx.stroke();
+
+          ctx.setLineDash([]);
+        }
+        break;
+
+      // Date Range
+      case "date_range":
+        if (points.length >= 2) {
+          const x1 = Math.min(points[0].x, points[1].x);
+          const x2 = Math.max(points[0].x, points[1].x);
+
+          // Draw vertical lines
+          ctx.strokeStyle = style.color;
+          ctx.beginPath();
+          ctx.moveTo(x1, chartArea.top);
+          ctx.lineTo(x1, chartArea.bottom);
+          ctx.moveTo(x2, chartArea.top);
+          ctx.lineTo(x2, chartArea.bottom);
+          ctx.stroke();
+
+          // Fill area
+          ctx.fillStyle = style.color + "15";
+          ctx.fillRect(x1, chartArea.top, x2 - x1, chartArea.height);
+
+          // Calculate time difference
+          const t1 = Math.min(drawing.points[0].time, drawing.points[1].time);
+          const t2 = Math.max(drawing.points[0].time, drawing.points[1].time);
+          const diffMs = t2 - t1;
+          const bars = Math.round(diffMs / getIntervalMs(interval));
+          const days = Math.floor(diffMs / 86400000);
+          const hours = Math.floor((diffMs % 86400000) / 3600000);
+
+          // Draw info box
+          const midX = (x1 + x2) / 2;
+          const infoY = chartArea.top + 30;
+
+          ctx.fillStyle = "#1e293b";
+          ctx.fillRect(midX - 50, infoY - 15, 100, 35);
+          ctx.strokeRect(midX - 50, infoY - 15, 100, 35);
+
+          ctx.fillStyle = style.color;
+          ctx.font = "11px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(`${bars} bars`, midX, infoY);
+          ctx.fillText(`${days}d ${hours}h`, midX, infoY + 15);
+        }
+        break;
+
+      // Price Range
+      case "price_range":
+        if (points.length >= 2) {
+          const y1 = Math.min(points[0].y, points[1].y);
+          const y2 = Math.max(points[0].y, points[1].y);
+          const p1 = Math.max(drawing.points[0].price, drawing.points[1].price);
+          const p2 = Math.min(drawing.points[0].price, drawing.points[1].price);
+
+          // Draw horizontal lines
+          ctx.strokeStyle = style.color;
+          ctx.beginPath();
+          ctx.moveTo(chartArea.left, y1);
+          ctx.lineTo(chartArea.right, y1);
+          ctx.moveTo(chartArea.left, y2);
+          ctx.lineTo(chartArea.right, y2);
+          ctx.stroke();
+
+          // Fill area
+          ctx.fillStyle = style.color + "15";
+          ctx.fillRect(chartArea.left, y1, chartArea.width, y2 - y1);
+
+          // Calculate price difference
+          const priceDiff = p1 - p2;
+          const pctDiff = (priceDiff / p2) * 100;
+
+          // Draw info box
+          const midY = (y1 + y2) / 2;
+          const infoX = chartArea.right - 80;
+
+          ctx.fillStyle = "#1e293b";
+          ctx.fillRect(infoX - 10, midY - 20, 90, 40);
+          ctx.strokeRect(infoX - 10, midY - 20, 90, 40);
+
+          ctx.fillStyle = style.color;
+          ctx.font = "11px sans-serif";
+          ctx.textAlign = "left";
+          ctx.fillText(`${formatPrice(priceDiff)}`, infoX, midY - 5);
+          ctx.fillText(`${pctDiff.toFixed(2)}%`, infoX, midY + 12);
+        }
+        break;
+
+      // Date and Price Range
+      case "date_price_range":
+        if (points.length >= 2) {
+          const x1 = Math.min(points[0].x, points[1].x);
+          const x2 = Math.max(points[0].x, points[1].x);
+          const y1 = Math.min(points[0].y, points[1].y);
+          const y2 = Math.max(points[0].y, points[1].y);
+
+          // Draw rectangle
+          ctx.strokeStyle = style.color;
+          ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+          ctx.fillStyle = style.color + "15";
+          ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+
+          // Calculate differences
+          const t1 = Math.min(drawing.points[0].time, drawing.points[1].time);
+          const t2 = Math.max(drawing.points[0].time, drawing.points[1].time);
+          const p1 = Math.max(drawing.points[0].price, drawing.points[1].price);
+          const p2 = Math.min(drawing.points[0].price, drawing.points[1].price);
+
+          const diffMs = t2 - t1;
+          const bars = Math.round(diffMs / getIntervalMs(interval));
+          const priceDiff = p1 - p2;
+          const pctDiff = (priceDiff / p2) * 100;
+
+          // Draw info box
+          const midX = (x1 + x2) / 2;
+          const midY = (y1 + y2) / 2;
+
+          ctx.fillStyle = "#1e293b";
+          ctx.fillRect(midX - 60, midY - 25, 120, 50);
+          ctx.strokeRect(midX - 60, midY - 25, 120, 50);
+
+          ctx.fillStyle = style.color;
+          ctx.font = "11px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(`${bars} bars`, midX, midY - 10);
+          ctx.fillText(`${formatPrice(priceDiff)} (${pctDiff.toFixed(2)}%)`, midX, midY + 8);
+        }
+        break;
+
+      // Fibonacci Fan
+      case "fib_fan":
+        if (points.length >= 2) {
+          const FAN_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+          const FAN_COLORS = ["#787B86", "#F23645", "#FF9800", "#4CAF50", "#089981", "#00BCD4", "#787B86"];
+
+          const startX = points[0].x;
+          const startY = points[0].y;
+          const endX = points[1].x;
+          const endY = points[1].y;
+
+          // Main line
+          ctx.strokeStyle = style.color;
+          ctx.beginPath();
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(endX, endY);
+          ctx.stroke();
+
+          // Fan lines
+          const dx = endX - startX;
+          const dy = endY - startY;
+
+          FAN_LEVELS.forEach((level, i) => {
+            if (level === 0 || level === 1) return;
+            const fanEndY = startY + dy * level;
+            const extendedX = startX + dx * 3;
+            const extendedY = startY + (fanEndY - startY) * 3;
+
+            ctx.strokeStyle = FAN_COLORS[i] || "#787B86";
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(extendedX, extendedY);
+            ctx.stroke();
+
+            if (style.showLabels !== false) {
+              ctx.fillStyle = FAN_COLORS[i] || "#787B86";
+              ctx.font = "10px sans-serif";
+              ctx.fillText(`${level}`, extendedX - 30, extendedY);
+            }
+          });
+
+          ctx.setLineDash([]);
+        }
+        break;
+
+      // Fibonacci Arc
+      case "fib_arc":
+        if (points.length >= 2) {
+          const ARC_LEVELS = [0.236, 0.382, 0.5, 0.618, 0.786, 1];
+          const ARC_COLORS = ["#F23645", "#FF9800", "#4CAF50", "#089981", "#00BCD4", "#787B86"];
+
+          const cx = points[0].x;
+          const cy = points[0].y;
+          const dx = points[1].x - points[0].x;
+          const dy = points[1].y - points[0].y;
+          const baseRadius = Math.sqrt(dx * dx + dy * dy);
+
+          // Draw baseline
+          ctx.strokeStyle = style.color;
+          ctx.beginPath();
+          ctx.moveTo(points[0].x, points[0].y);
+          ctx.lineTo(points[1].x, points[1].y);
+          ctx.stroke();
+
+          // Draw arcs
+          ARC_LEVELS.forEach((level, i) => {
+            const radius = baseRadius * level;
+            ctx.strokeStyle = ARC_COLORS[i] || "#787B86";
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+            ctx.stroke();
+
+            if (style.showLabels !== false) {
+              ctx.fillStyle = ARC_COLORS[i] || "#787B86";
+              ctx.font = "10px sans-serif";
+              ctx.fillText(`${level}`, cx + radius + 5, cy);
+            }
+          });
+
+          ctx.setLineDash([]);
+        }
+        break;
+
+      // Elliott Wave
+      case "elliott_wave":
+        if (points.length >= 2) {
+          const WAVE_LABELS = ["1", "2", "3", "4", "5", "A", "B", "C"];
+
+          ctx.strokeStyle = style.color;
+          ctx.beginPath();
+          ctx.moveTo(points[0].x, points[0].y);
+          for (let i = 1; i < points.length; i++) {
+            ctx.lineTo(points[i].x, points[i].y);
+          }
+          ctx.stroke();
+
+          // Draw wave labels
+          ctx.fillStyle = style.color;
+          ctx.font = "bold 12px sans-serif";
+          ctx.textAlign = "center";
+
+          points.forEach((p, i) => {
+            if (i < WAVE_LABELS.length) {
+              const prevPrice = i > 0 ? drawing.points[i - 1].price : drawing.points[i].price;
+              const isTop = drawing.points[i].price > prevPrice;
+              const yOffset = isTop ? -12 : 16;
+              ctx.fillText(WAVE_LABELS[i], p.x, p.y + yOffset);
+            }
+          });
+        }
+        break;
+
+      // Cyclic Lines
+      case "cyclic_lines":
+        if (points.length >= 2) {
+          const startTime = drawing.points[0].time;
+          const endTime = drawing.points[1].time;
+          const period = endTime - startTime;
+
+          if (period > 0) {
+            // Draw vertical lines at each cycle
+            let currentTime = startTime;
+            let cycleNum = 0;
+
+            while (timeToX(currentTime) <= chartArea.right && cycleNum < 20) {
+              const x = timeToX(currentTime);
+
+              if (x >= chartArea.left) {
+                ctx.strokeStyle = cycleNum === 0 ? style.color : style.color + "60";
+                ctx.setLineDash(cycleNum === 0 ? [] : [3, 3]);
+                ctx.beginPath();
+                ctx.moveTo(x, chartArea.top);
+                ctx.lineTo(x, chartArea.bottom);
+                ctx.stroke();
+              }
+
+              currentTime += period;
+              cycleNum++;
+            }
+            ctx.setLineDash([]);
+          }
+        }
+        break;
+
+      // Note
+      case "note":
+        if (points.length >= 1) {
+          const text = style.text || "Note";
+          const fontSize = style.fontSize || 12;
+          const padding = 8;
+
+          ctx.font = `${fontSize}px sans-serif`;
+          const lines = text.split('\n');
+          const maxWidth = Math.max(...lines.map(line => ctx.measureText(line).width));
+          const totalHeight = lines.length * (fontSize + 4);
+
+          // Draw note background
+          ctx.fillStyle = style.backgroundColor || "#374151";
+          ctx.fillRect(points[0].x, points[0].y, maxWidth + padding * 2, totalHeight + padding * 2);
+          ctx.strokeStyle = style.color;
+          ctx.strokeRect(points[0].x, points[0].y, maxWidth + padding * 2, totalHeight + padding * 2);
+
+          // Draw text
+          ctx.fillStyle = style.color;
+          ctx.textAlign = "left";
+          lines.forEach((line, i) => {
+            ctx.fillText(line, points[0].x + padding, points[0].y + padding + fontSize + i * (fontSize + 4));
+          });
+        }
+        break;
+
+      // Callout
+      case "callout":
+        if (points.length >= 2) {
+          const text = style.text || "Callout";
+          const fontSize = style.fontSize || 12;
+          const padding = 8;
+
+          ctx.font = `${fontSize}px sans-serif`;
+          const textWidth = ctx.measureText(text).width;
+
+          // Draw line from point to text
+          ctx.strokeStyle = style.color;
+          ctx.beginPath();
+          ctx.moveTo(points[0].x, points[0].y);
+          ctx.lineTo(points[1].x, points[1].y);
+          ctx.stroke();
+
+          // Draw text box at second point
+          ctx.fillStyle = style.backgroundColor || "#374151";
+          ctx.fillRect(points[1].x - padding, points[1].y - fontSize - padding, textWidth + padding * 2, fontSize + padding * 2);
+          ctx.strokeRect(points[1].x - padding, points[1].y - fontSize - padding, textWidth + padding * 2, fontSize + padding * 2);
+
+          ctx.fillStyle = style.color;
+          ctx.textAlign = "left";
+          ctx.fillText(text, points[1].x, points[1].y);
+
+          // Draw pointer dot
+          ctx.fillStyle = style.color;
+          ctx.beginPath();
+          ctx.arc(points[0].x, points[0].y, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+
+      // Icon
+      case "icon":
+        if (points.length >= 1) {
+          const icons = ["⭐", "🔥", "💰", "📍", "🎯", "⚠️", "✅", "❌", "🔴", "🟢", "🔵", "🟡"];
+          const iconIndex = Math.floor((style.fontSize || 0) % icons.length);
+          const icon = style.text || icons[iconIndex] || "📍";
+          const size = (style.fontSize || 20);
+
+          ctx.font = `${size}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.fillText(icon, points[0].x, points[0].y);
+        }
+        break;
+
+      // Arc shape
+      case "arc":
+        if (points.length >= 3) {
+          ctx.strokeStyle = style.color;
+          ctx.beginPath();
+
+          // Calculate arc from 3 points
+          const [p1, p2, p3] = points;
+
+          // Find center of circle passing through 3 points
+          const ax = p1.x, ay = p1.y;
+          const bx = p2.x, by = p2.y;
+          const cx = p3.x, cy = p3.y;
+
+          const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+          if (Math.abs(d) > 0.001) {
+            const ux = ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / d;
+            const uy = ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d;
+            const radius = Math.sqrt((ax - ux) * (ax - ux) + (ay - uy) * (ay - uy));
+
+            const startAngle = Math.atan2(ay - uy, ax - ux);
+            const endAngle = Math.atan2(cy - uy, cx - ux);
+
+            ctx.beginPath();
+            ctx.arc(ux, uy, radius, startAngle, endAngle);
+            ctx.stroke();
+          } else {
+            // Points are collinear, draw line
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p3.x, p3.y);
+            ctx.stroke();
+          }
+        }
+        break;
+
+      // Regression Trend
+      case "regression_trend":
+        if (points.length >= 2 && klines.length > 0) {
+          const startTime = Math.min(drawing.points[0].time, drawing.points[1].time);
+          const endTime = Math.max(drawing.points[0].time, drawing.points[1].time);
+
+          // Find klines in range
+          const rangeKlines = klines.filter(k => k.timestamp >= startTime && k.timestamp <= endTime);
+
+          if (rangeKlines.length > 1) {
+            // Calculate linear regression
+            const n = rangeKlines.length;
+            let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+
+            rangeKlines.forEach((k, i) => {
+              const price = (k.high + k.low + k.close) / 3;
+              sumX += i;
+              sumY += price;
+              sumXY += i * price;
+              sumX2 += i * i;
+            });
+
+            const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+            const intercept = (sumY - slope * sumX) / n;
+
+            // Calculate standard deviation
+            let sumSquaredDiff = 0;
+            rangeKlines.forEach((k, i) => {
+              const price = (k.high + k.low + k.close) / 3;
+              const predicted = intercept + slope * i;
+              sumSquaredDiff += Math.pow(price - predicted, 2);
+            });
+            const stdDev = Math.sqrt(sumSquaredDiff / n);
+
+            // Draw regression line and channels
+            const x1 = timeToX(rangeKlines[0].timestamp);
+            const x2 = timeToX(rangeKlines[n - 1].timestamp);
+            const y1 = priceToY(intercept);
+            const y2 = priceToY(intercept + slope * (n - 1));
+            const devPixels = Math.abs(priceToY(0) - priceToY(stdDev * 2));
+
+            // Upper channel
+            ctx.strokeStyle = "#22c55e";
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(x1, y1 - devPixels);
+            ctx.lineTo(x2, y2 - devPixels);
+            ctx.stroke();
+
+            // Lower channel
+            ctx.strokeStyle = "#ef4444";
+            ctx.beginPath();
+            ctx.moveTo(x1, y1 + devPixels);
+            ctx.lineTo(x2, y2 + devPixels);
+            ctx.stroke();
+
+            // Main regression line
+            ctx.strokeStyle = style.color;
+            ctx.setLineDash([]);
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+            ctx.lineWidth = style.lineWidth;
+
+            // Fill channel
+            ctx.fillStyle = style.color + "10";
+            ctx.beginPath();
+            ctx.moveTo(x1, y1 - devPixels);
+            ctx.lineTo(x2, y2 - devPixels);
+            ctx.lineTo(x2, y2 + devPixels);
+            ctx.lineTo(x1, y1 + devPixels);
+            ctx.closePath();
+            ctx.fill();
+          }
+        }
+        break;
+
+      // Fibonacci Channel - parallel channel with Fib levels
+      case "fib_channel":
+        if (points.length >= 3) {
+          const FIB_CHANNEL_LEVELS = style.fibLevels || [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618];
+          const FIB_COLORS = ["#787B86", "#F23645", "#FF9800", "#4CAF50", "#089981", "#00BCD4", "#787B86", "#E040FB", "#9C27B0"];
+
+          // Channel direction from point 0 to point 1
+          const dx = points[1].x - points[0].x;
+          const dy = points[1].y - points[0].y;
+          const lineLen = Math.sqrt(dx * dx + dy * dy);
+
+          // Channel height from point 2
+          const channelHeight = points[2].y - points[0].y;
+
+          // Draw Fibonacci levels
+          FIB_CHANNEL_LEVELS.forEach((level, i) => {
+            const levelY = channelHeight * level;
+            const color = FIB_COLORS[i % FIB_COLORS.length];
+
+            ctx.strokeStyle = color;
+            ctx.setLineDash(level === 0 || level === 1 ? [] : [3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y + levelY);
+            ctx.lineTo(points[1].x, points[1].y + levelY);
+            ctx.stroke();
+
+            // Label
+            if (style.showLabels !== false) {
+              ctx.fillStyle = color;
+              ctx.font = "10px sans-serif";
+              ctx.textAlign = "right";
+              ctx.fillText(`${level}`, points[1].x + 35, points[1].y + levelY + 4);
+            }
+          });
+
+          // Fill between 0 and 1 level
+          ctx.fillStyle = style.color + "10";
+          ctx.beginPath();
+          ctx.moveTo(points[0].x, points[0].y);
+          ctx.lineTo(points[1].x, points[1].y);
+          ctx.lineTo(points[1].x, points[1].y + channelHeight);
+          ctx.lineTo(points[0].x, points[0].y + channelHeight);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.setLineDash([]);
+        }
+        break;
+
+      // Fibonacci Circles - concentric circles at Fib ratios
+      case "fib_circles":
+        if (points.length >= 2) {
+          const FIB_CIRCLE_LEVELS = style.fibLevels || [0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618];
+          const FIB_COLORS = ["#F23645", "#FF9800", "#4CAF50", "#089981", "#00BCD4", "#787B86", "#E040FB", "#9C27B0"];
+
+          const cx = points[0].x;
+          const cy = points[0].y;
+          const baseRadius = Math.sqrt(
+            Math.pow(points[1].x - points[0].x, 2) + Math.pow(points[1].y - points[0].y, 2)
+          );
+
+          // Draw baseline
+          ctx.strokeStyle = style.color;
+          ctx.beginPath();
+          ctx.moveTo(points[0].x, points[0].y);
+          ctx.lineTo(points[1].x, points[1].y);
+          ctx.stroke();
+
+          // Draw Fibonacci circles
+          FIB_CIRCLE_LEVELS.forEach((level, i) => {
+            const radius = baseRadius * level;
+            const color = FIB_COLORS[i % FIB_COLORS.length];
+
+            ctx.strokeStyle = color;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Label
+            if (style.showLabels !== false) {
+              ctx.fillStyle = color;
+              ctx.font = "10px sans-serif";
+              ctx.textAlign = "left";
+              ctx.fillText(`${level}`, cx + radius + 5, cy);
+            }
+          });
+
+          // Center point
+          ctx.fillStyle = style.color;
+          ctx.beginPath();
+          ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.setLineDash([]);
+        }
+        break;
+
+      // Fibonacci Wedge - fan from a point with Fib angles
+      case "fib_wedge":
+        if (points.length >= 3) {
+          const FIB_WEDGE_LEVELS = style.fibLevels || [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+          const FIB_COLORS = ["#787B86", "#F23645", "#FF9800", "#4CAF50", "#089981", "#00BCD4", "#787B86"];
+
+          // Point 0 is the apex, points 1 and 2 define the wedge boundaries
+          const apexX = points[0].x;
+          const apexY = points[0].y;
+
+          // Draw wedge boundary lines
+          ctx.strokeStyle = style.color;
+          ctx.beginPath();
+          ctx.moveTo(apexX, apexY);
+          ctx.lineTo(points[1].x, points[1].y);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(apexX, apexY);
+          ctx.lineTo(points[2].x, points[2].y);
+          ctx.stroke();
+
+          // Calculate angles
+          const angle1 = Math.atan2(points[1].y - apexY, points[1].x - apexX);
+          const angle2 = Math.atan2(points[2].y - apexY, points[2].x - apexX);
+          const angleDiff = angle2 - angle1;
+          const maxLen = Math.max(
+            Math.sqrt(Math.pow(points[1].x - apexX, 2) + Math.pow(points[1].y - apexY, 2)),
+            Math.sqrt(Math.pow(points[2].x - apexX, 2) + Math.pow(points[2].y - apexY, 2))
+          ) * 1.5;
+
+          // Draw intermediate Fib lines
+          FIB_WEDGE_LEVELS.forEach((level, i) => {
+            if (level === 0 || level === 1) return;
+            const lineAngle = angle1 + angleDiff * level;
+            const endX = apexX + Math.cos(lineAngle) * maxLen;
+            const endY = apexY + Math.sin(lineAngle) * maxLen;
+
+            ctx.strokeStyle = FIB_COLORS[i % FIB_COLORS.length];
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(apexX, apexY);
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+
+            // Label
+            if (style.showLabels !== false) {
+              ctx.fillStyle = FIB_COLORS[i % FIB_COLORS.length];
+              ctx.font = "10px sans-serif";
+              ctx.fillText(`${level}`, endX - 20, endY);
+            }
+          });
+
+          // Fill wedge area
+          ctx.fillStyle = style.color + "10";
+          ctx.beginPath();
+          ctx.moveTo(apexX, apexY);
+          ctx.lineTo(points[1].x, points[1].y);
+          ctx.lineTo(points[2].x, points[2].y);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.setLineDash([]);
+        }
+        break;
+
+      // Three Drives Pattern - harmonic pattern
+      case "three_drives":
+        if (points.length >= 7) {
+          // Three Drives pattern: 7 points (Start, Drive1, Retracement1, Drive2, Retracement2, Drive3, End)
+          ctx.strokeStyle = style.color;
+
+          // Draw pattern lines
+          ctx.beginPath();
+          ctx.moveTo(points[0].x, points[0].y);
+          for (let i = 1; i < points.length; i++) {
+            ctx.lineTo(points[i].x, points[i].y);
+          }
+          ctx.stroke();
+
+          // Draw points and labels
+          const labels = ["0", "1", "A", "2", "B", "3", "C"];
+          ctx.font = "bold 11px sans-serif";
+          ctx.textAlign = "center";
+
+          points.forEach((p, i) => {
+            // Point marker
+            ctx.fillStyle = style.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Label
+            if (i < labels.length) {
+              const prevPrice = i > 0 ? drawing.points[i - 1].price : drawing.points[i].price;
+              const isTop = drawing.points[i].price > prevPrice;
+              ctx.fillText(labels[i], p.x, p.y + (isTop ? -10 : 18));
+            }
+          });
+
+          // Calculate and display ratios
+          if (points.length >= 7) {
+            ctx.font = "10px sans-serif";
+            ctx.fillStyle = "#f59e0b";
+
+            // Drive 1 to Retracement 1 ratio (should be 0.618 or 0.786)
+            const drive1 = Math.abs(drawing.points[1].price - drawing.points[0].price);
+            const ret1 = Math.abs(drawing.points[2].price - drawing.points[1].price);
+            const ratio1 = drive1 > 0 ? (ret1 / drive1).toFixed(3) : "0";
+            const mid1X = (points[1].x + points[2].x) / 2;
+            const mid1Y = (points[1].y + points[2].y) / 2;
+            ctx.fillText(ratio1, mid1X + 15, mid1Y);
+
+            // Drive 2 to Retracement 2 ratio
+            const drive2 = Math.abs(drawing.points[3].price - drawing.points[2].price);
+            const ret2 = Math.abs(drawing.points[4].price - drawing.points[3].price);
+            const ratio2 = drive2 > 0 ? (ret2 / drive2).toFixed(3) : "0";
+            const mid2X = (points[3].x + points[4].x) / 2;
+            const mid2Y = (points[3].y + points[4].y) / 2;
+            ctx.fillText(ratio2, mid2X + 15, mid2Y);
+
+            // Symmetry ratio between drives
+            const drive3 = Math.abs(drawing.points[5].price - drawing.points[4].price);
+            const symRatio = drive1 > 0 ? (drive3 / drive1).toFixed(3) : "0";
+            ctx.fillStyle = "#22c55e";
+            ctx.fillText(`1:${symRatio}`, points[5].x + 20, points[5].y);
+          }
+        }
+        break;
+
+      // Disjoint Channel - two parallel lines not connected
+      case "disjoint_channel":
+        if (points.length >= 4) {
+          // Points 0-1 define first line, points 2-3 define second line
+          const extendLeft = style.extendLeft || false;
+          const extendRight = style.extendRight || false;
+
+          // First line
+          const dx1 = points[1].x - points[0].x;
+          const dy1 = points[1].y - points[0].y;
+          const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+
+          let extL1 = 0, extR1 = 0;
+          if (len1 > 0) {
+            extL1 = extendLeft ? -2000 * (dx1 / len1) : 0;
+            extR1 = extendRight ? 2000 * (dx1 / len1) : 0;
+          }
+
+          ctx.strokeStyle = style.color;
+          ctx.beginPath();
+          ctx.moveTo(points[0].x + (extendLeft ? extL1 : 0), points[0].y + (extendLeft ? -2000 * (dy1 / len1) : 0));
+          ctx.lineTo(points[1].x + (extendRight ? extR1 : 0), points[1].y + (extendRight ? 2000 * (dy1 / len1) : 0));
+          ctx.stroke();
+
+          // Second line
+          const dx2 = points[3].x - points[2].x;
+          const dy2 = points[3].y - points[2].y;
+          const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+
+          let extL2 = 0, extR2 = 0;
+          if (len2 > 0) {
+            extL2 = extendLeft ? -2000 * (dx2 / len2) : 0;
+            extR2 = extendRight ? 2000 * (dx2 / len2) : 0;
+          }
+
+          ctx.beginPath();
+          ctx.moveTo(points[2].x + (extendLeft ? extL2 : 0), points[2].y + (extendLeft ? -2000 * (dy2 / len2) : 0));
+          ctx.lineTo(points[3].x + (extendRight ? extR2 : 0), points[3].y + (extendRight ? 2000 * (dy2 / len2) : 0));
+          ctx.stroke();
+
+          // Fill between lines if they're roughly parallel
+          ctx.fillStyle = style.color + "15";
+          ctx.beginPath();
+          ctx.moveTo(points[0].x, points[0].y);
+          ctx.lineTo(points[1].x, points[1].y);
+          ctx.lineTo(points[3].x, points[3].y);
+          ctx.lineTo(points[2].x, points[2].y);
+          ctx.closePath();
+          ctx.fill();
+        }
+        break;
+
+      // Flat Top/Bottom - horizontal consolidation pattern
+      case "flat_top_bottom":
+        if (points.length >= 2) {
+          const x1 = Math.min(points[0].x, points[1].x);
+          const x2 = Math.max(points[0].x, points[1].x);
+          const y1 = Math.min(points[0].y, points[1].y);
+          const y2 = Math.max(points[0].y, points[1].y);
+          const midY = (y1 + y2) / 2;
+
+          // Draw top line (resistance)
+          ctx.strokeStyle = "#ef4444";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y1);
+          ctx.stroke();
+
+          // Draw bottom line (support)
+          ctx.strokeStyle = "#22c55e";
+          ctx.beginPath();
+          ctx.moveTo(x1, y2);
+          ctx.lineTo(x2, y2);
+          ctx.stroke();
+
+          // Draw middle line (dashed)
+          ctx.strokeStyle = style.color;
+          ctx.lineWidth = style.lineWidth;
+          ctx.setLineDash([5, 5]);
+          ctx.beginPath();
+          ctx.moveTo(x1, midY);
+          ctx.lineTo(x2, midY);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Fill zone
+          ctx.fillStyle = style.color + "10";
+          ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+
+          // Labels
+          const topPrice = Math.max(drawing.points[0].price, drawing.points[1].price);
+          const bottomPrice = Math.min(drawing.points[0].price, drawing.points[1].price);
+          const range = topPrice - bottomPrice;
+          const pct = (range / bottomPrice * 100).toFixed(2);
+
+          ctx.font = "11px sans-serif";
+          ctx.textAlign = "right";
+          ctx.fillStyle = "#ef4444";
+          ctx.fillText(`R: ${formatPrice(topPrice)}`, x2 - 5, y1 - 5);
+          ctx.fillStyle = "#22c55e";
+          ctx.fillText(`S: ${formatPrice(bottomPrice)}`, x2 - 5, y2 + 15);
+          ctx.fillStyle = style.color;
+          ctx.fillText(`${pct}%`, x2 - 5, midY + 4);
         }
         break;
 
@@ -3333,6 +4895,31 @@ export function CustomChart({
     }
 
     ctx.setLineDash([]);
+
+    // Draw text note if present (for all drawing types except text/note/callout which already render text)
+    if (style.text && !["text", "anchored_text", "note", "callout", "icon"].includes(drawing.drawing_type)) {
+      const text = style.text;
+      const fontSize = style.fontSize || 11;
+      ctx.font = `${fontSize}px sans-serif`;
+      ctx.fillStyle = style.color;
+      ctx.textAlign = "left";
+
+      // Position text near the first point with a small offset
+      const textX = points[0].x + 8;
+      const textY = points[0].y - 8;
+
+      // Draw background for better readability
+      const textMetrics = ctx.measureText(text);
+      const textHeight = fontSize + 4;
+      const textWidth = textMetrics.width + 8;
+
+      ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+      ctx.fillRect(textX - 4, textY - fontSize, textWidth, textHeight);
+
+      // Draw text
+      ctx.fillStyle = style.color;
+      ctx.fillText(text, textX, textY);
+    }
 
     // Draw control handles if selected
     if (isSelected) {
@@ -3359,6 +4946,9 @@ export function CustomChart({
   // ============================================
 
   const updateViewportPriceRange = useCallback((newStartIndex: number, newEndIndex: number) => {
+    // Safeguard against invalid values
+    if (!isFinite(newStartIndex) || !isFinite(newEndIndex)) return;
+
     const visibleStartIdx = Math.max(0, Math.floor(newStartIndex));
     const visibleEndIdx = Math.min(klines.length, Math.ceil(newEndIndex));
     const visibleKlines = klines.slice(visibleStartIdx, visibleEndIdx);
@@ -3371,9 +4961,25 @@ export function CustomChart({
 
     if (autoPriceScale && visibleKlines.length > 0) {
       // Auto scale: adjust price range to fit visible candles
-      const prices = visibleKlines.flatMap(k => [k.high, k.low]);
-      const min = Math.min(...prices);
-      const max = Math.max(...prices);
+      // Use a loop instead of spread to avoid stack overflow on large arrays
+      let min = Infinity;
+      let max = -Infinity;
+      for (let i = 0; i < visibleKlines.length; i++) {
+        const k = visibleKlines[i];
+        if (k.low < min) min = k.low;
+        if (k.high > max) max = k.high;
+      }
+
+      // Safeguard against invalid min/max
+      if (!isFinite(min) || !isFinite(max) || min === max) {
+        setViewport(prev => ({
+          ...prev,
+          startIndex: newStartIndex,
+          endIndex: newEndIndex,
+        }));
+        return;
+      }
+
       const padding = (max - min) * 0.1;
 
       setViewport({
@@ -3530,9 +5136,9 @@ export function CustomChart({
       let newStart = dragStart.startIndex + indexDelta;
       let newEnd = newStart + visibleCount;
 
-      // Allow panning far into the future (up to 10x visible range)
-      const minStart = -visibleCount * 10;
-      const maxEnd = klines.length + visibleCount * 10;
+      // Allow panning into the future (FUTURE_SPACE candles beyond last candle)
+      const minStart = -visibleCount; // Allow some past scrolling
+      const maxEnd = klines.length + FUTURE_SPACE;
 
       if (newStart < minStart) {
         newStart = minStart;
@@ -3763,20 +5369,34 @@ export function CustomChart({
     e.preventDefault();
     e.stopPropagation();
 
-    // Smooth zoom like TradingView (3% per tick instead of 10%)
-    const zoomFactor = e.deltaY > 0 ? 1.03 : 0.97;
-    const { startIndex, endIndex } = viewport;
-    const visibleCount = endIndex - startIndex;
+    // Throttle wheel events to max 60fps (16ms)
+    const now = performance.now();
+    if (now - lastWheelTime.current < 16) return;
+    lastWheelTime.current = now;
 
-    const newVisibleCount = Math.max(MIN_CANDLES, Math.min(MAX_CANDLES, Math.round(visibleCount * zoomFactor)));
+    // Cancel pending RAF if any
+    if (wheelRAF.current) {
+      cancelAnimationFrame(wheelRAF.current);
+    }
 
-    const mouseIndex = mousePos ? xToIndex(mousePos.x) : (startIndex + endIndex) / 2;
-    const ratio = visibleCount > 0 ? (mouseIndex - startIndex) / visibleCount : 0.5;
+    // Use requestAnimationFrame for smooth updates
+    wheelRAF.current = requestAnimationFrame(() => {
+      // Smooth zoom like TradingView (3% per tick instead of 10%)
+      const zoomFactor = e.deltaY > 0 ? 1.03 : 0.97;
+      const { startIndex, endIndex } = viewport;
+      const visibleCount = endIndex - startIndex;
 
-    const newStart = mouseIndex - newVisibleCount * ratio;
-    const newEnd = newStart + newVisibleCount;
+      const newVisibleCount = Math.max(MIN_CANDLES, Math.min(MAX_CANDLES, Math.round(visibleCount * zoomFactor)));
 
-    updateViewportPriceRange(newStart, newEnd);
+      const mouseIndex = mousePos ? xToIndex(mousePos.x) : (startIndex + endIndex) / 2;
+      const ratio = visibleCount > 0 ? (mouseIndex - startIndex) / visibleCount : 0.5;
+
+      const newStart = mouseIndex - newVisibleCount * ratio;
+      const newEnd = newStart + newVisibleCount;
+
+      updateViewportPriceRange(newStart, newEnd);
+      wheelRAF.current = null;
+    });
   }, [viewport, mousePos, xToIndex, updateViewportPriceRange]);
 
   // Native wheel event listener with passive: false to allow preventDefault
@@ -3828,11 +5448,16 @@ export function CustomChart({
       return;
     }
 
-    // Check if double-clicking on a drawing - open settings panel
+    // Check if double-clicking on a drawing - only open settings if already selected
     const clickedDrawing = findDrawingAtPoint(x, y);
     if (clickedDrawing) {
-      setSelectedDrawingId(clickedDrawing.id);
-      setShowSettingsPanel(true);
+      if (clickedDrawing.id === selectedDrawingId) {
+        // Drawing is already selected, open settings panel
+        setShowSettingsPanel(true);
+      } else {
+        // First double-click, just select the drawing
+        setSelectedDrawingId(clickedDrawing.id);
+      }
       return;
     }
 
@@ -3840,7 +5465,7 @@ export function CustomChart({
     const endIdx = klines.length;
     const startIdx = Math.max(0, endIdx - 100);
     updateViewportPriceRange(startIdx, endIdx);
-  }, [klines, updateViewportPriceRange, chartArea, dimensions, viewport, findDrawingAtPoint]);
+  }, [klines, updateViewportPriceRange, chartArea, dimensions, viewport, findDrawingAtPoint, selectedDrawingId]);
 
   // ============================================
   // DRAWING HANDLERS
@@ -3852,6 +5477,96 @@ export function CustomChart({
       setDrawings(prev => prev.filter(d => d.id !== id));
     } catch (e) {
       console.error("Failed to delete drawing:", e);
+    }
+  }, []);
+
+  // ============================================
+  // DRAWING GROUP HANDLERS
+  // ============================================
+
+  const handleCreateGroup = useCallback(async (name: string) => {
+    const groupId = `group-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const newGroup = {
+      id: groupId,
+      name,
+      symbol,
+      color: "#6366f1",
+      visible: true,
+      collapsed: false,
+    };
+    try {
+      await invoke("create_drawing_group", { request: newGroup });
+      setDrawingGroups(prev => [...prev, newGroup]);
+    } catch (e) {
+      console.error("Failed to create group:", e);
+      // Still add locally even if backend fails
+      setDrawingGroups(prev => [...prev, newGroup]);
+    }
+  }, [symbol]);
+
+  const handleDeleteGroup = useCallback(async (groupId: string) => {
+    try {
+      await invoke("delete_drawing_group", { id: groupId });
+      setDrawingGroups(prev => prev.filter(g => g.id !== groupId));
+      // Ungroup all drawings in this group
+      setDrawings(prev => prev.map(d =>
+        d.group_id === groupId ? { ...d, group_id: undefined } : d
+      ));
+    } catch (e) {
+      console.error("Failed to delete group:", e);
+    }
+  }, []);
+
+  const handleRenameGroup = useCallback(async (groupId: string, name: string) => {
+    setDrawingGroups(prev => prev.map(g =>
+      g.id === groupId ? { ...g, name } : g
+    ));
+    try {
+      const group = drawingGroups.find(g => g.id === groupId);
+      if (group) {
+        await invoke("update_drawing_group", {
+          request: { ...group, name, symbol }
+        });
+      }
+    } catch (e) {
+      console.error("Failed to rename group:", e);
+    }
+  }, [drawingGroups, symbol]);
+
+  const handleToggleGroupVisibility = useCallback(async (groupId: string) => {
+    const group = drawingGroups.find(g => g.id === groupId);
+    if (!group) return;
+
+    const newVisible = !group.visible;
+    setDrawingGroups(prev => prev.map(g =>
+      g.id === groupId ? { ...g, visible: newVisible } : g
+    ));
+    // Also toggle visibility for all drawings in the group
+    setDrawings(prev => prev.map(d =>
+      d.group_id === groupId ? { ...d, visible: newVisible } : d
+    ));
+
+    try {
+      await invoke("toggle_group_visibility", { groupId, visible: newVisible });
+    } catch (e) {
+      console.error("Failed to toggle group visibility:", e);
+    }
+  }, [drawingGroups]);
+
+  const handleToggleGroupCollapse = useCallback((groupId: string) => {
+    setDrawingGroups(prev => prev.map(g =>
+      g.id === groupId ? { ...g, collapsed: !g.collapsed } : g
+    ));
+  }, []);
+
+  const handleMoveDrawingToGroup = useCallback(async (drawingId: string, groupId: string | null) => {
+    setDrawings(prev => prev.map(d =>
+      d.id === drawingId ? { ...d, group_id: groupId || undefined } : d
+    ));
+    try {
+      await invoke("move_drawing_to_group", { drawingId, groupId });
+    } catch (e) {
+      console.error("Failed to move drawing to group:", e);
     }
   }, []);
 
@@ -3942,6 +5657,8 @@ export function CustomChart({
           style: JSON.stringify(drawing.style),
           visible: drawing.visible,
           locked: drawing.locked,
+          name: drawing.name,
+          group_id: drawing.group_id,
         },
       });
     } catch (e) {
@@ -4243,7 +5960,7 @@ export function CustomChart({
         showObjectTree={showObjectTree}
       />
 
-      <div className="relative bg-[#0f172a]" style={{ height: dimensions.height }}>
+      <div ref={canvasWrapperRef} className="relative bg-[#0f172a] flex-1 overflow-hidden">
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-dark-900/80 z-10">
             <div className="text-white">Loading chart data...</div>
@@ -4412,8 +6129,10 @@ export function CustomChart({
           <button
             onClick={() => {
               const visibleCount = viewport.endIndex - viewport.startIndex;
-              const newEndIdx = klines.length;
-              const newStartIdx = Math.max(0, newEndIdx - visibleCount);
+              // Position last candle with some space to the right (20% of visible area)
+              const futureOffset = Math.floor(visibleCount * 0.2);
+              const newEndIdx = klines.length + futureOffset;
+              const newStartIdx = newEndIdx - visibleCount;
               updateViewportPriceRange(newStartIdx, newEndIdx);
               setAutoScroll(true);
             }}
@@ -4445,7 +6164,9 @@ export function CustomChart({
               visible: d.visible,
               locked: d.locked,
               name: d.name,
+              group_id: d.group_id,
             }))}
+            groups={drawingGroups}
             selectedDrawingId={selectedDrawingId}
             onSelectDrawing={(id) => {
               setSelectedDrawingId(id);
@@ -4472,6 +6193,12 @@ export function CustomChart({
                 d.id === id ? { ...d, name } : d
               ));
             }}
+            onMoveToGroup={handleMoveDrawingToGroup}
+            onCreateGroup={handleCreateGroup}
+            onDeleteGroup={handleDeleteGroup}
+            onRenameGroup={handleRenameGroup}
+            onToggleGroupVisibility={handleToggleGroupVisibility}
+            onToggleGroupCollapse={handleToggleGroupCollapse}
             onClose={() => setShowObjectTree(false)}
           />
         )}
